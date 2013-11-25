@@ -27,4 +27,27 @@ function signups_menu () {
      'access arguments' => array('administer site configuration'),
      'type' => MENU_CALLBACK,
    );
+
+   return $items;
+}
+
+/**
+ * start the work of checking that everyone has an assignment
+ * every period
+ */
+function _check_signups () {
+  // get the default session for new courses to use as the current session
+  module_load_include('inc', 'content', 'includes/content.crud');
+  $fields = content_field_instance_read(array('type_name' => 'course',
+                                              'field_name' => 'field_course_session'));
+  $session_nid = $fields[0]['widget']['default_value'][0]['nid'];
+
+  // get the list of all member families
+  $result = '<ul>';
+  $query = db_query('SELECT nid, type FROM {node} WHERE type=\'family\'');
+  while ($row = db_fetch_array($query)) {
+    $result .= '  <li>'. $row['nid'] .'</li>';
+  }
+  $result .= '</ul>';
+  return $result;
 }
