@@ -1,0 +1,30 @@
+<?php
+/**
+ * @file
+ * handle some stuff related to signing up for classes and volunteer
+ * assignments
+ */
+
+/**
+ * implementation of hook_help()
+ */
+function signups_help ($path, $arg) {
+  if ($path == 'admin/help#schedule') {
+    $txt = 'This module handles some stuff related to signing '.
+           'up for classes and volunteer assignments.';
+    return '<p>'. t($txt) .'</p>';
+  }
+}
+
+/**
+ * Implementation of hook_menu()
+ */
+function signups_menu () {
+   // a page for checking existing signups
+   $items['admin/signups_check'] = array(
+   	 'title' => 'Check Signups',
+     'page callback' => '_check_signups',
+     'access arguments' => array('administer site configuration'),
+     'type' => MENU_CALLBACK,
+   );
+}
