@@ -49,10 +49,64 @@ function _check_signups () {
                     'ON node.uid=roles.uid '.
                     'WHERE type=\'family\' AND rid=8');
   // loop through all paid families
-  while ($row = db_fetch_array($query)) {
+  $row = db_fetch_array($query);
+//  while ($row = db_fetch_array($query)) {
     // generate the schedule for this family (could probably have made a query to do
     // this all at once, but don't see the point
-//    $result .= '  <li>'. $row['nid'] .': '. $row['title'] .'</li>';
+    $result .= '<li>'. $row['title'] .':';
+    $result .= _signups_get_schedule_family($row['nid']);
+    $result .= '</li>';
+//  }
+  $result .= '</ul>';
+  return $result;
+}
+
+/**
+ * get the schedule for one family (including course signups and jobs)
+ * @param int $nid the node id of the family in question
+ * @return a nicely formatted schedule, including notifications if anyone
+ *      has two assignments for a given period, or no assignments for a given
+ *      period
+ */
+function _signups_get_schedule_family ($nid) {
+  // first, get all people in this family that need an assignment each period
+  $query = db_query('SELECT * FROM {node} AS node '.
+                    'JOIN {content_field_person_family} AS family '.
+                    'ON node.vid = family.vid '.
+                    'JOIN {content_field_person_no_assignment} AS gone '.
+                    'ON node.vid = gone.vid '.
+                    'WHERE (type=\'child\' or type=\'adult\') '.
+                    'AND gone.field_person_no_assignment_value = \'No\' '.
+                    'AND family.nid=node.nid AND field_person_family_nid='. $nid);
+  $result = "<ul>";
+  while ($row = db_fetch_array($query)) {
+    $result .= "<li>". $row['title'] .': '.
+               _signups_get_schedule_person($row['nid'])
+               ."</li>";
+  }
+  $result .= "</ul>";
+  return $result;
+}
+
+/**
+ * get the schedule for one person, including course signups and volunteer signups
+ * @param int $nid the node id of the person
+ * @return array the information for this person in the form of an array with one element for each period
+ */
+function _signups_get_schedule_person ($nid) {
+  $result = '<ul>';
+  // get the course signups for this person
+  $query = db_query('SELECT * FROM {node} AS node '.
+                    //'JOIN {content_type_course_signup} AS signup '.
+                    //'ON node.vid = signup.vid ' .
+                    'JOIN {content_field_person} AS person '.
+                    'ON node.vid = person.vid ' .
+                    'WHERE type=\'course_signup\' '.
+                    'AND person.field_person_nid = '. $nid);
+                    //'');
+//  $row=db_fetch_array($query);
+  while ($row = db_fetch_array($query)) {
+    $result .= '<li>'. $row['title'] .'</li>';
   }
   $result .= '</ul>';
   return $result;
