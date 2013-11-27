@@ -101,15 +101,13 @@ function _signups_get_schedule_person ($session_nid, $nid) {
   $query = db_query('SELECT * FROM {node} AS node '.
                     'JOIN {content_type_course_signup} AS signup '.
                     'ON node.vid = signup.vid ' .
-                    //'JOIN {content_field_course_session} AS session '.
-                    //'ON node.vid = session.vid '.
                     'JOIN {content_field_person} AS person '.
                     'ON node.vid = person.vid ' .
+                    'JOIN {content_field_course_session} AS course '.
+                    'ON course.nid = signup.field_signup_course_nid '.
                     'WHERE type=\'course_signup\' '.
                     'AND person.field_person_nid = '. $nid .' '.
-                    //'AND session.field_course_session_nid = '. $session_nid);
-                    '');
-//  $row=db_fetch_array($query);
+                    'AND course.field_course_session_nid = '. $session_nid);
   while ($row = db_fetch_array($query)) {
     $result .= '<li>'. $row['title'] .'</li>';
   }
