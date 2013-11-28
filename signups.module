@@ -43,67 +43,49 @@ function _check_signups () {
   $session_nid = $fields[0]['widget']['default_value'][0]['nid'];
 
   // get the list of all paid member families
-  $result = '<ul>';
-  $query = db_query('SELECT nid, title, node.uid, roles.uid, type, rid '.
-                    'FROM {node} as node INNER JOIN {users_roles} as roles '.
+  $query = db_query('SELECT node.nid AS family_nid, '.
+                    'node.title AS family_name '.
+                    'FROM {node} AS node '.
+                    'INNER JOIN {users_roles} as roles '.
                     'ON node.uid=roles.uid '.
-                    'WHERE type=\'family\' AND rid=8');
+                    'WHERE type=\'family\' AND rid=8 '.
+                    'ORDER BY node.title ASC');
+  $signups = array();
   // loop through all paid families
-  $row = db_fetch_array($query);
   while ($row = db_fetch_array($query)) {
     // generate the schedule for this family (could probably have made a query to do
     // this all at once, but don't see the point
-    $result .= '<li>'. $row['title'] .':';
-    $result .= _signups_get_schedule_family($session_nid, $row['nid']);
-    $result .= '</li>';
+    $signups[$row['family_name']] = _signups_get_schedule_family($session_nid, $row['family_nid']);
   }
-  $result .= '</ul>';
-  return $result;
+  return _signups_print_page($signups);
 }
 
 /**
  * get the schedule for one family (including course signups and jobs)
  * @param int $session_nid the node id of the session
- * @param int $nid the node id of the family in question
- * @return a nicely formatted schedule, including notifications if anyone
- *      has two assignments for a given period, or no assignments for a given
- *      period
+ * @param int $family_nid the node id of the family in question
+ * @return an array containing the signup information for this family -- with one
+ *         entry for each person, indexed by their name
  */
-function _signups_get_schedule_family ($session_nid, $nid) {
+function _signups_get_schedule_family ($session_nid, $family_nid) {
+  $signups = array();
   // first, get all people in this family that need an assignment each period
-  $query = db_query('SELECT * FROM {node} AS node '.
+  $query = db_query('SELECT node.nid AS person_nid, '.
+                    'node.title AS name '.
+                    'FROM {node} AS node '.
                     'JOIN {content_field_person_family} AS family '.
                     'ON node.vid = family.vid '.
                     'JOIN {content_field_person_no_assignment} AS gone '.
                     'ON node.vid = gone.vid '.
                     'WHERE (type=\'child\' or type=\'adult\') '.
                     'AND gone.field_person_no_assignment_value = \'No\' '.
-                    'AND family.nid=node.nid AND field_person_family_nid='. $nid);
-  $result = '<table>';
-  $result .= '<tr><td>Name</td><td>Before</td><td>Period 1</td><td>Period 2</td>'.
-             '<td>Lunch</td><td>Period 3</td><td>Period 4</td><td>After</td></tr>';
+                    'AND family.nid=node.nid AND field_person_family_nid='. $family_nid .' '.
+                    'ORDER BY node.title ASC');
   // each person is a row
   while ($row = db_fetch_array($query)) {
-    $result .= '<tr><td>'. $row['title'] .'</td>';
-    $signups = _signups_get_schedule_person($session_nid, $row['nid']);
-    // Before
-    $result .= _signups_print_one_period(489, $signups);
-    // Period 1
-    $result .= _signups_print_one_period(490, $signups);
-    // Period 2
-    $result .= _signups_print_one_period(492, $signups);
-    // Lunch
-    $result .= _signups_print_one_period(494, $signups);
-    // Period 3
-    $result .= _signups_print_one_period(496, $signups);
-    // Period 4
-    $result .= _signups_print_one_period(498, $signups);
-    // After is nid 499
-    $result .= _signups_print_one_period(499, $signups);
-    $result .= '</tr>';
+    $signups[$row['name']] = _signups_get_schedule_person($session_nid, $row['person_nid']);
   }
-  $result .= "</table>";
-  return $result;
+  return $signups;
 }
 
 /**
@@ -113,7 +95,7 @@ function _signups_get_schedule_family ($session_nid, $nid) {
  * @return array the information for this person in the form of an array with one element for each period
  */
 function _signups_get_schedule_person ($session_nid, $person_nid) {
-  $result = array();
+  $signups = array();
 
   // *****************************
   // START WITH THE COURSE SIGNUPS
@@ -150,8 +132,8 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'JOIN {content_type_course} as course_period_field '.
                                       'ON course_node.vid = course_period_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
-    $result[$course['period_nid']]['course'] = $course['course'];
-    $result[$course['period_nid']]['signup'] = $row['signup_nid'];
+    $signups[$course['period_nid']]['course'] = $course['course'];
+    $signups[$course['period_nid']]['signup'] = $row['signup_nid'];
   }
 
   // *****************************
@@ -189,22 +171,87 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'ON course_node.vid = course_period_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
     $period = $course['period_nid'];
-    $result[$period]['course'] = $course['course'];
-    $result[$period]['signup'] = $row['signup_nid'];
+    $signups[$period]['course'] = $course['course'];
+    $signups[$period]['signup'] = $row['signup_nid'];
     // and the info about the job
     $job = db_fetch_array(db_query('SELECT job_node.title AS job '.
                                    'FROM {node} as job_node '.
                                    'WHERE job_node.nid = '. $row['job_nid']));
-    $result[$period]['job'] = $job['job'];
+    $signups[$period]['job'] = $job['job'];
   }
+  return $signups;
+}
+
+/**
+ * print the entire schedule page
+ * @param array $signups the entire signups array, indexed first by family, then by person
+ *        within that family, then by period, then with entries for course and optionally job
+ *        if a period is missing, it means no assignment for that period (which is legal)
+ * @return a nicely formatted listing of the information
+ */
+function _signups_print_page($signups) {
+  $result = '<ul>';
+  // loop through the families
+  foreach ($signups as $family => $signups_for_family) {
+    $result .= '<li>'. _signups_print_one_family($family, $signups_for_family) .'</li>';
+  }
+  $result .= '</ul>';
+  return $result;
+}
+
+/**
+ * print the schedule for one family
+ * @param string $family the name of the family
+ * @param array $signups the signup information for that family, indexed by person
+ *        within that family, then by period, then with entries for course and optionally job
+ *        if a period is missing, it means no assignment for that period (which is legal)
+ * @return a nicely formatted html output of the schedule
+ */
+function _signups_print_one_family ($family, $signups) {
+  $result = "<table border=\"1\">";
+  $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
+             '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
+  foreach ($signups as $person => $signups_for_person) {
+    $result .= _signups_print_one_person($person, $signups_for_person);
+  }
+  $result .= '</table>';
+  return $result;
+}
+
+/**
+ * print the schedule for one person
+ * @param string $name the name of the person
+ * @param array $signups the array containing information about this person's signups, indexed
+ *        by the period nid for each period (blank if there is no assignment for a given period)
+ * @return a nicely formatted table row with the information for one person
+ */
+function _signups_print_one_person ($name, $signups) {
+  $result = '<tr><th>'. $name .'</th>';
+  // pass the signups array only for the given period: 489=Before
+  $result .= _signups_print_one_period(489, $signups);
+  // pass the signups array only for the given period: 490=Period 1
+  $result .= _signups_print_one_period(490, $signups);
+  // pass the signups array only for the given period: 492=Period 2
+  $result .= _signups_print_one_period(492, $signups);
+  // pass the signups array only for the given period: 494=Lunch
+  $result .= _signups_print_one_period(494, $signups);
+  // pass the signups array only for the given period: 496=Period 3
+  $result .= _signups_print_one_period(496, $signups);
+  // pass the signups array only for the given period: 498=Period 4
+  $result .= _signups_print_one_period(498, $signups);
+  // pass the signups array only for the given period: 499=After
+  $result .= _signups_print_one_period(499, $signups);
+  $result .= '</tr>';
   return $result;
 }
 
 /**
  * print one period for one family
- * @param int $period the nid of the period to print
- * @param array $signups the signups array, indexed first by period, then with
- *              elements for 'course' and optionally 'job'
+ * @param period the period nid to be printed
+ * @param array $signups the signups array for this person, indexed by period, then
+ *              with elements for 'course' and optionally 'job'. A missing entry means
+ *              there is no assignment for that period (which is legal, so handle
+ *              it gracefully)
  * @return string the <td></td> enclosed information for this period
  */
 function _signups_print_one_period ($period, $signups) {
