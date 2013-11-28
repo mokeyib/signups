@@ -20,10 +20,19 @@ function signups_help ($path, $arg) {
  * Implementation of hook_menu()
  */
 function signups_menu () {
+   // a page for getting signups for all paid members
+   $items['admin/signups_get_paid/%'] = array(
+   	 'title' => 'Get Signups',
+     'page callback' => '_get_signups_paid',
+     'page arguments' => array(2),
+     'access arguments' => array('administer site configuration'),
+     'type' => MENU_CALLBACK,
+   );
    // a page for checking existing signups
-   $items['admin/signups_check'] = array(
-   	 'title' => 'Check Signups',
-     'page callback' => '_check_signups',
+   $items['admin/signups_get_members/%'] = array(
+   	 'title' => 'Get Signups',
+     'page callback' => '_get_signups_members',
+     'page arguments' => array(2),
      'access arguments' => array('administer site configuration'),
      'type' => MENU_CALLBACK,
    );
@@ -32,15 +41,36 @@ function signups_menu () {
 }
 
 /**
- * start the work of checking that everyone has an assignment
- * every period
+ * callback for getting signups for all paid members
+ * @param int $session_nid the node id of the session
  */
-function _check_signups () {
-  // get the default session for new courses to use as the current session
-  module_load_include('inc', 'content', 'includes/content.crud');
-  $fields = content_field_instance_read(array('type_name' => 'course',
-                                              'field_name' => 'field_course_session'));
-  $session_nid = $fields[0]['widget']['default_value'][0]['nid'];
+function _get_signups_paid ($session_nid) {
+  return _get_signups($session_nid, 8);
+}
+
+/**
+ * callback for getting signups for all members
+ * @param int $session_nid the node id of the session
+ */
+function _get_signups_members ($session_nid) {
+  return _get_signups($session_nid, 7);
+}
+
+/**
+ * get the signups for every person with the given role for the given session
+ * @param int $session_nid the node id of the session (if 0, use the default
+ *        session for new courses)
+ * @param int $role_id the role id to use (8 is paid, 7 is member)
+ * @return the html formatted output
+ */
+function _get_signups ($session_nid, $role_id) {
+  if ($session_nid == '0') {
+    // get the default session for new courses to use as the current session
+    module_load_include('inc', 'content', 'includes/content.crud');
+    $fields = content_field_instance_read(array('type_name' => 'course',
+                                                'field_name' => 'field_course_session'));
+    $session_nid = $fields[0]['widget']['default_value'][0]['nid'];
+  }
 
   // get the list of all paid member families
   $query = db_query('SELECT node.nid AS family_nid, '.
@@ -48,7 +78,7 @@ function _check_signups () {
                     'FROM {node} AS node '.
                     'INNER JOIN {users_roles} as roles '.
                     'ON node.uid=roles.uid '.
-                    'WHERE type=\'family\' AND rid=8 '.
+                    'WHERE type=\'family\' AND rid = '. $role_id .' '.
                     'ORDER BY node.title ASC');
   $signups = array();
   // loop through all paid families
@@ -208,7 +238,8 @@ function _signups_print_page($signups) {
  * @return a nicely formatted html output of the schedule
  */
 function _signups_print_one_family ($family, $signups) {
-  $result = "<table border=\"1\">";
+  $result = '<h1>'. $family .'</h1>';
+  $result .= "<table border=\"1\">";
   $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
              '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
   foreach ($signups as $person => $signups_for_person) {
