@@ -98,17 +98,51 @@ function _signups_get_schedule_family ($session_nid, $nid) {
 function _signups_get_schedule_person ($session_nid, $nid) {
   $result = '<ul>';
   // get the course signups for this person
+  $query = db_query('SELECT signup_course_field.field_signup_course_nid AS nid '.
+                    'FROM {node} AS signup_node '.
+                    'JOIN {content_type_course_signup} AS signup_course_field '.
+                    'ON signup_node.vid = signup_course_field.vid ' .
+                    'JOIN {content_field_person} AS signup_person_field '.
+                    'ON signup_node.vid = signup_person_field.vid ' .
+                    'JOIN {content_field_course_session} AS course_session_field '.
+                    'ON course_session_field.nid = signup_course_field.field_signup_course_nid '.
+                    'WHERE signup_node.type=\'course_signup\' '.
+                    'AND signup_person_field.field_person_nid = '. $nid .' '.
+                    'AND course_session_field.field_course_session_nid = '. $session_nid);
+  // each row is one course for this person from this session.
+  while ($row = db_fetch_array($query)) {
+    $row = db_fetch_array(db_query('SELECT course_node.title AS course , '.
+                                   'period_node.title AS period '.
+                                   'FROM {node} as course_node '.
+                                   'JOIN {content_type_course} as course_period_field '.
+                                   'ON course_node.vid = course_period_field.vid '.
+                                   'JOIN {node} as period_node '.
+                                   'ON period_node.nid = course_period_field.field_course_period_nid '.
+                                   'WHERE course_node.nid = '. $row['nid']));
+    $result .= '<li>'. $row['period'] . ': '. $row['course'] .'</li>';
+  }
   $query = db_query('SELECT * FROM {node} AS node '.
-                    'JOIN {content_type_course_signup} AS signup '.
+                    'JOIN {content_type_volunteer_signup} AS signup '.
                     'ON node.vid = signup.vid ' .
                     'JOIN {content_field_person} AS person '.
                     'ON node.vid = person.vid ' .
                     'JOIN {content_field_course_session} AS course '.
-                    'ON course.nid = signup.field_signup_course_nid '.
-                    'WHERE type=\'course_signup\' '.
+                    'ON course.nid = signup.field_vol_signup_course_nid '.
+                    'WHERE type=\'volunteer_signup\' '.
                     'AND person.field_person_nid = '. $nid .' '.
                     'AND course.field_course_session_nid = '. $session_nid);
+  // each row is one course for this person from this session.
   while ($row = db_fetch_array($query)) {
+/*    $row = db_fetch_array(db_query('SELECT course_node.title AS course , '.
+                                   'period_node.title AS period '.
+                                   'FROM {node} as course_node '.
+                                   'JOIN {content_type_course} as course_period_field '.
+                                   'ON course_node.vid = course_period_field.vid '.
+                                   'JOIN {node} as period_node '.
+                                   'ON period_node.nid = course_period_field.field_course_period_nid '.
+                                   'WHERE course_node.nid = '. $row['nid']));
+    $result .= '<li>'. $row['period'] . ': '. $row['course'] .'</li>';
+*/    // @todo still need to get the job title
     $result .= '<li>'. $row['title'] .'</li>';
   }
   $result .= '</ul>';
