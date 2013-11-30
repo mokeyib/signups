@@ -5,6 +5,21 @@
  * assignments
  */
 
+// the node ids of the period nodes
+define(BEFORE, 489);
+define(PERIOD1, 490);
+define(PERIOD2, 492);
+define(LUNCH, 494);
+define(PERIOD3, 496);
+define(PERIOD4, 498);
+define(AFTER, 499);
+// the role ids for certain roles
+define(PAID, 8);
+define(MEMBER, 7);
+// the possible problems in signups
+define(MISSING, 'MISSING');
+define(DOUBLE, 'DOUBLE');
+
 /**
  * implementation of hook_help()
  */
@@ -45,7 +60,7 @@ function signups_menu () {
  * @param int $session_nid the node id of the session
  */
 function _get_signups_paid ($session_nid) {
-  return _get_signups($session_nid, 8);
+  return _get_signups($session_nid, PAID);
 }
 
 /**
@@ -53,14 +68,14 @@ function _get_signups_paid ($session_nid) {
  * @param int $session_nid the node id of the session
  */
 function _get_signups_members ($session_nid) {
-  return _get_signups($session_nid, 7);
+  return _get_signups($session_nid, MEMBER);
 }
 
 /**
  * get the signups for every person with the given role for the given session
  * @param int $session_nid the node id of the session (if 0, use the default
  *        session for new courses)
- * @param int $role_id the role id to use (8 is paid, 7 is member)
+ * @param int $role_id the role id to use
  * @return the html formatted output
  */
 function _get_signups ($session_nid, $role_id) {
@@ -162,8 +177,21 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'JOIN {content_type_course} as course_period_field '.
                                       'ON course_node.vid = course_period_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
-    $signups[$course['period_nid']]['course'] = $course['course'];
-    $signups[$course['period_nid']]['signup'] = $row['signup_nid'];
+    // check if this is a double signup
+    $period = $course['period_nid'];
+    if (isset($signups[$period])) {
+      if (!isset($signups['issues'])) $signups['issues']['count'] = 0;
+      $count = $signups['issues']['count']++;
+      $signups['issues'][$count]['problem'] = DOUBLE;
+      $signups['issues'][$count]['period'] = $period;
+      $signups['issues'][$count]['course1'] = $course['course'];
+      $signups['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups['issues'][$count]['course2'] = $signups[$period]['course'];
+      $signups['issues'][$count]['signup2'] = $signups[$period]['signup'];
+    } else { // not a double -- just store the info
+      $signups[$period]['course'] = $course['course'];
+      $signups[$period]['signup'] = $row['signup_nid'];
+    }
   }
 
   // *****************************
@@ -201,15 +229,68 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'ON course_node.vid = course_period_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
     $period = $course['period_nid'];
-    $signups[$period]['course'] = $course['course'];
-    $signups[$period]['signup'] = $row['signup_nid'];
-    // and the info about the job
-    $job = db_fetch_array(db_query('SELECT job_node.title AS job '.
-                                   'FROM {node} as job_node '.
-                                   'WHERE job_node.nid = '. $row['job_nid']));
-    $signups[$period]['job'] = $job['job'];
+
+    // check if this is a double signup
+    if (isset($signups[$period])) {
+      if (!isset($signups['issues'])) $signups['issues']['count'] = 0;
+      $count = $signups['issues']['count']++;
+      $signups['issues'][$count]['problem'] = DOUBLE;
+      $signups['issues'][$count]['period'] = $period;
+      $signups['issues'][$count]['course1'] = $course['course'];
+      $signups['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups['issues'][$count]['course2'] = $signups[$period]['course'];
+      $signups['issues'][$count]['signup2'] = $signups[$period]['signup'];
+    } else {
+      $signups[$period]['course'] = $course['course'];
+      $signups[$period]['signup'] = $row['signup_nid'];
+      // and the info about the job
+      $job = db_fetch_array(db_query('SELECT job_node.title AS job '.
+                                     'FROM {node} as job_node '.
+                                     'WHERE job_node.nid = '. $row['job_nid']));
+      $signups[$period]['job'] = $job['job'];
+    }
+  }
+
+  // check if any of the required signups are missing
+  foreach (array(PERIOD1, PERIOD2, PERIOD3, PERIOD4) as $period) {
+    if (!isset($signups[$period])) {
+      if (!isset($signups['issues']['count'])) $signups['issues']['count'] = 0;
+      $count = $signups['issues']['count']++;
+      $signups['issues'][$count]['problem'] = MISSING;
+      $signups['issues'][$count]['period'] = $period;
+    }
   }
   return $signups;
+}
+
+/**
+ * print all of the issues
+ */
+function _signups_print_issues ($signups) {
+  $result = '<h1>Issues</h1>';
+  $result .= '<ul>';
+  foreach ($signups as $family => $family_signups) {
+    foreach ($family_signups as $person => $person_signups) {
+      if (isset($person_signups['issues'])) {
+        for ($i = 0; $i < $person_signups['issues']['count']; $i++) {
+          $issue = $person_signups['issues'][$i];
+          $result .= '<li> '. $family .': '. $person .': '. $issue['problem'];
+          if ($issue['problem'] == MISSING) {
+            $result .= ' '. _get_period_name($issue['period']);
+          } else {
+            $result .= ' '. _get_period_name($issue['period']) .' '.
+                       "<a href=\"../../node/". $issue[signup1] ."\">".
+                       $issue['course1'] .'</a> and '.
+                       "<a href=\"../../node/". $issue[signup2] ."\">".
+                       $issue['course2'] .'</a>';
+          }
+          $result .= '</li>';
+        }
+      }
+    }
+  }
+  $result .= '</ul>';
+  return $result;
 }
 
 /**
@@ -220,7 +301,9 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
  * @return a nicely formatted listing of the information
  */
 function _signups_print_page($signups) {
-  $result = '<ul>';
+  $result = _signups_print_issues($signups);
+  $result .= '<h1>All Signups</h1>';
+  $result .= '<ul>';
   // loop through the families
   foreach ($signups as $family => $signups_for_family) {
     $result .= '<li>'. _signups_print_one_family($family, $signups_for_family) .'</li>';
@@ -258,20 +341,13 @@ function _signups_print_one_family ($family, $signups) {
  */
 function _signups_print_one_person ($name, $signups) {
   $result = '<tr><th>'. $name .'</th>';
-  // pass the signups array only for the given period: 489=Before
-  $result .= _signups_print_one_period(489, $signups);
-  // pass the signups array only for the given period: 490=Period 1
-  $result .= _signups_print_one_period(490, $signups);
-  // pass the signups array only for the given period: 492=Period 2
-  $result .= _signups_print_one_period(492, $signups);
-  // pass the signups array only for the given period: 494=Lunch
-  $result .= _signups_print_one_period(494, $signups);
-  // pass the signups array only for the given period: 496=Period 3
-  $result .= _signups_print_one_period(496, $signups);
-  // pass the signups array only for the given period: 498=Period 4
-  $result .= _signups_print_one_period(498, $signups);
-  // pass the signups array only for the given period: 499=After
-  $result .= _signups_print_one_period(499, $signups);
+  $result .= _signups_print_one_period(BEFORE, $signups);
+  $result .= _signups_print_one_period(PERIOD1, $signups);
+  $result .= _signups_print_one_period(PERIOD2, $signups);
+  $result .= _signups_print_one_period(LUNCH, $signups);
+  $result .= _signups_print_one_period(PERIOD3, $signups);
+  $result .= _signups_print_one_period(PERIOD4, $signups);
+  $result .= _signups_print_one_period(AFTER, $signups);
   $result .= '</tr>';
   return $result;
 }
@@ -288,11 +364,35 @@ function _signups_print_one_person ($name, $signups) {
 function _signups_print_one_period ($period, $signups) {
   $result .= '<td>';
   if (isset($signups[$period])) {
-    $result .= $signups[$period]['course'];
+    $result .= "<a href=\"../../node/". $signups[$period]['signup'] ."\">".
+               $signups[$period]['course'] .'</a>';
     if (isset($signups[$period]['job'])) {
       $result .= "\n<em>". $signups[$period]['job'] .'</em>';
     }
   }
   $result .= '</td>';
   return $result;
+}
+
+/**
+ * convert the period nid to a word
+ * @param period_nid the node id of the period
+ */
+function _get_period_name ($period_nid) {
+  switch ($period_nid) {
+    case BEFORE:
+      return "Before";
+    case PERIOD1:
+      return "Period 1";
+    case PERIOD2:
+      return "Period 2";
+    case LUNCH:
+      return "Lunch";
+    case PERIOD3:
+      return "Period 3";
+    case PERIOD4:
+      return "Period 4";
+    case AFTER:
+      return "After";
+  }
 }
