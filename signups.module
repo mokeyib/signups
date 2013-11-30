@@ -114,6 +114,7 @@ function _get_signups ($session_nid, $role_id) {
  */
 function _signups_get_schedule_family ($session_nid, $family_nid) {
   $signups = array();
+
   // first, get all people in this family that need an assignment each period
   $query = db_query('SELECT node.nid AS person_nid, '.
                     'node.title AS name '.
@@ -141,6 +142,7 @@ function _signups_get_schedule_family ($session_nid, $family_nid) {
  */
 function _signups_get_schedule_person ($session_nid, $person_nid) {
   $signups = array();
+  $signups['points'] = 0;
 
   // *****************************
   // START WITH THE COURSE SIGNUPS
@@ -240,14 +242,18 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
       $signups['issues'][$count]['signup1'] = $row['signup_nid'];
       $signups['issues'][$count]['course2'] = $signups[$period]['course'];
       $signups['issues'][$count]['signup2'] = $signups[$period]['signup'];
-    } else {
+    } else { // it's not a double, just store the info
       $signups[$period]['course'] = $course['course'];
       $signups[$period]['signup'] = $row['signup_nid'];
       // and the info about the job
-      $job = db_fetch_array(db_query('SELECT job_node.title AS job '.
+      $job = db_fetch_array(db_query('SELECT job_node.title AS job, '.
+                                     'job_fields.field_vol_job_points_value AS points '.
                                      'FROM {node} as job_node '.
+                                     'JOIN {content_type_volunteer_job_type} AS job_fields '.
+                                     'ON job_node.vid = job_fields.vid '.
                                      'WHERE job_node.nid = '. $row['job_nid']));
       $signups[$period]['job'] = $job['job'];
+      $signups['points'] += $job['points'];
     }
   }
 
@@ -321,7 +327,12 @@ function _signups_print_page($signups) {
  * @return a nicely formatted html output of the schedule
  */
 function _signups_print_one_family ($family, $signups) {
-  $result = '<h1>'. $family .'</h1>';
+  // calculate points for this family
+  $points = 0;
+  foreach ($signups as $signups_for_person) {
+    $points += $signups_for_person['points'];
+  }
+  $result = '<h1>'. $family .'</h1> points: '. $points;
   $result .= "<table border=\"1\">";
   $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
              '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
