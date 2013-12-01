@@ -143,6 +143,7 @@ function _signups_get_schedule_family ($session_nid, $family_nid) {
 function _signups_get_schedule_person ($session_nid, $person_nid) {
   $signups = array();
   $signups['points'] = 0;
+  $signups['fees'] = 0;
 
   // *****************************
   // START WITH THE COURSE SIGNUPS
@@ -174,10 +175,13 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
   while ($row = db_fetch_array($query)) {
     // now get the title of the course and the period it is in
     $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
-                                      'course_period_field.field_course_period_nid AS period_nid '.
-                                      'FROM {node} as course_node '.
-                                      'JOIN {content_type_course} as course_period_field '.
+                                      'course_period_field.field_course_period_nid AS period_nid, '.
+                                      'course_fee_field.field_course_fee_value AS fee '.
+                                      'FROM {node} AS course_node '.
+                                      'JOIN {content_type_course} AS course_period_field '.
                                       'ON course_node.vid = course_period_field.vid '.
+                                      'JOIN {content_field_course_fee} AS course_fee_field '.
+                                      'ON course_node.vid = course_fee_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
     // check if this is a double signup
     $period = $course['period_nid'];
@@ -193,6 +197,7 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
     } else { // not a double -- just store the info
       $signups[$period]['course'] = $course['course'];
       $signups[$period]['signup'] = $row['signup_nid'];
+      $signups['fees'] += $course['fee'];
     }
   }
 
@@ -327,12 +332,18 @@ function _signups_print_page($signups) {
  * @return a nicely formatted html output of the schedule
  */
 function _signups_print_one_family ($family, $signups) {
-  // calculate points for this family
+  // calculate points and for the family (they're already done per person)
   $points = 0;
+  $fees = 0;
   foreach ($signups as $signups_for_person) {
     $points += $signups_for_person['points'];
+    $fees += $signups_for_person['fees'];
   }
-  $result = '<h1>'. $family .'</h1> points: '. $points;
+  $result = '<h1>'. $family .'</h1>';
+  $result .= 'points: '. $points;
+  if ($fees != 0) {
+    $result .= sprintf(' fees: $%01.2f paypal: $%01.2f', $fees, ($fees+.3)/.971);
+  }
   $result .= "<table border=\"1\">";
   $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
              '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
