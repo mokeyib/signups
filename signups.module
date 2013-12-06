@@ -36,17 +36,9 @@ function signups_help ($path, $arg) {
  */
 function signups_menu () {
    // a page for getting signups for all paid members
-   $items['admin/signups_get_paid/%'] = array(
+   $items['admin/signups/%'] = array(
    	 'title' => 'Get Signups',
-     'page callback' => '_get_signups_paid',
-     'page arguments' => array(2),
-     'access arguments' => array('administer site configuration'),
-     'type' => MENU_CALLBACK,
-   );
-   // a page for checking existing signups
-   $items['admin/signups_get_members/%'] = array(
-   	 'title' => 'Get Signups',
-     'page callback' => '_get_signups_members',
+     'page callback' => '_get_signups',
      'page arguments' => array(2),
      'access arguments' => array('administer site configuration'),
      'type' => MENU_CALLBACK,
@@ -56,122 +48,84 @@ function signups_menu () {
 }
 
 /**
- * callback for getting signups for all paid members
- * @param int $session_nid the node id of the session
- */
-function _get_signups_paid ($session_nid) {
-  return _get_signups($session_nid, PAID);
-}
-
-/**
- * callback for getting signups for all members
- * @param int $session_nid the node id of the session
- */
-function _get_signups_members ($session_nid) {
-  return _get_signups($session_nid, MEMBER);
-}
-
-/**
  * get the signups for every person with the given role for the given session
  * @param int $session_nid the node id of the session (if 0, use the default
  *        session for new courses)
  * @param int $role_id the role id to use
  * @return the html formatted output
  */
-function _get_signups ($session_nid, $role_id) {
-  if ($session_nid == '0') {
-    // get the default session for new courses to use as the current session
-    module_load_include('inc', 'content', 'includes/content.crud');
-    $fields = content_field_instance_read(array('type_name' => 'course',
-                                                'field_name' => 'field_course_session'));
-    $session_nid = $fields[0]['widget']['default_value'][0]['nid'];
+function _get_signups ($session_nid) {
+  // get all signups, indexed by person node id
+  $signups = _get_all_signups($session_nid);
+
+  // sort by family, and replace person node ids with names
+  $sorted_signups = array();
+  foreach ($signups as $person_nid => $person_signups) {
+    $person = _get_person($person_nid);
+    $family = $person->family_name;
+    $sorted_signups[$family]['nid'] = $person->family_nid;
+    $sorted_signups[$family]['fees'] += $person_signups['fees'];
+    $sorted_signups[$family]['points'] += $person_signups['points'];
+    $sorted_signups[$family]['people'][$person->name] = $person_signups;
   }
 
-  // get the list of all paid member families
-  $query = db_query('SELECT node.nid AS family_nid, '.
-                    'node.title AS family_name '.
-                    'FROM {node} AS node '.
-                    'INNER JOIN {users_roles} as roles '.
-                    'ON node.uid=roles.uid '.
-                    'WHERE type=\'family\' AND rid = '. $role_id .' '.
-                    'ORDER BY node.title ASC');
-  $signups = array();
-  // loop through all paid families
-  while ($row = db_fetch_array($query)) {
-    // generate the schedule for this family (could probably have made a query to do
-    // this all at once, but don't see the point
-    $signups[$row['family_name']] = _signups_get_schedule_family($session_nid, $row['family_nid']);
+  // check through the families to make sure that everyone who
+  // needs an assignment has one.
+  // @todo check the no assignment value
+  foreach ($sorted_signups as $family => $family_signups) {
+    $query = db_query('SELECT node.nid AS person_nid '.
+        'FROM {node} AS node '.
+        'JOIN {content_field_person_family} AS family_field '.
+        'ON node.vid = family_field.vid '.
+        'JOIN {content_field_person_no_assignment} AS gone '.
+        'ON node.vid = gone.vid '.
+        'WHERE (type=\'child\' or type=\'adult\') '.
+        'AND gone.field_person_no_assignment_value = \'No\' '.
+        'AND family_field.field_person_family_nid = '. $family_signups['nid']);
+    while ($person = db_fetch_array($query)) {
+      if (!isset($signups[$person['person_nid']])) {
+        $person = _get_person($person['person_nid']);
+        $sorted_signups[$person->family_name]['people'][$person->name] = array();
+      }
+    }
   }
-  return _signups_print_page($signups);
+
+  return _print_page($sorted_signups);
 }
 
 /**
- * get the schedule for one family (including course signups and jobs)
- * @param int $session_nid the node id of the session
- * @param int $family_nid the node id of the family in question
- * @return an array containing the signup information for this family -- with one
- *         entry for each person, indexed by their name
+ * for the given person, query to get the name and family information
+ * @param int $person_nid the person node id
+ * @return the person array including 'name', 'family_name', and 'family_nid'
  */
-function _signups_get_schedule_family ($session_nid, $family_nid) {
-  $signups = array();
-
-  // first, get all people in this family that need an assignment each period
-  $query = db_query('SELECT node.nid AS person_nid, '.
-                    'node.title AS name '.
-                    'FROM {node} AS node '.
-                    'JOIN {content_field_person_family} AS family '.
-                    'ON node.vid = family.vid '.
-                    'JOIN {content_field_person_no_assignment} AS gone '.
-                    'ON node.vid = gone.vid '.
-                    'WHERE (type=\'child\' or type=\'adult\') '.
-                    'AND gone.field_person_no_assignment_value = \'No\' '.
-                    'AND family.nid=node.nid AND field_person_family_nid='. $family_nid .' '.
-                    'ORDER BY node.title ASC');
-  // each person is a row
-  while ($row = db_fetch_array($query)) {
-    $signups[$row['name']] = _signups_get_schedule_person($session_nid, $row['person_nid']);
-  }
-  return $signups;
+function _get_person ($person_nid) {
+  $query = db_query('SELECT node.title AS name, '.
+      'family.title AS family_name, '.
+      'family.nid AS family_nid '.
+      'FROM {node} AS node '.
+      'JOIN {content_field_person_family} AS family_field '.
+      'ON node.vid = family_field.vid '.
+      'JOIN {node} AS family '.
+      'ON family.nid = family_field.field_person_family_nid '.
+      'WHERE node.nid = '. $person_nid);
+  return db_fetch_object($query);
 }
 
 /**
- * get the schedule for one person, including course signups and volunteer signups
+ * get all the course signups and volunteer signups
  * @param int $session_nid the node id of the session
- * @param int $person_nid the node id of the person
- * @return array the information for this person in the form of an array with one element for each period
+ * @return array the information, indexed by person node id. For each person, it's indexed
+ *    by period node id. There's also fee and point information stored per person
  */
-function _signups_get_schedule_person ($session_nid, $person_nid) {
+function _get_all_signups ($session_nid) {
   $signups = array();
-  $signups['points'] = 0;
-  $signups['fees'] = 0;
 
   // *****************************
   // START WITH THE COURSE SIGNUPS
 
-  $select = 'SELECT signup_course_field.field_signup_course_nid AS course_nid, '.
-            'signup_node.nid AS signup_nid ';
-  $from = 'FROM {node} AS signup_node ';
-  // get access to the course field (so we can get the course nid to be used
-  // in a separate query because this one is already too complex)
-  $join_course = 'JOIN {content_type_course_signup} AS signup_course_field '.
-                 'ON signup_node.vid = signup_course_field.vid ';
-  // get access to the person field (so we can filter for the right person)
-  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
-                 'ON signup_node.vid = signup_person_field.vid ';
-  // get access to the session, linked from the course (so we can filter
-  // for the right session)
-  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
-                  'ON course_session_field.nid = '.
-                  'signup_course_field.field_signup_course_nid ';
-  $where_type = 'WHERE signup_node.type=\'course_signup\' ';
-  $where_person = 'AND signup_person_field.field_person_nid = '. $person_nid .' ';
-  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
-
-  // get the course signups for this person
-  $query = db_query($select . $from . $join_course . $join_person . $join_session .
-                    $where_type . $where_person . $where_session);
-
-  // each row is one course for this person from this session.
+  // get all the course signups
+  $query = _get_course_signup_query($session_nid);
+  // each row is one signup for this this session.
   while ($row = db_fetch_array($query)) {
     // now get the title of the course and the period it is in
     $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
@@ -185,47 +139,33 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'WHERE course_node.nid = '. $row['course_nid']));
     // check if this is a double signup
     $period = $course['period_nid'];
-    if (isset($signups[$period])) {
-      if (!isset($signups['issues'])) $signups['issues']['count'] = 0;
-      $count = $signups['issues']['count']++;
-      $signups['issues'][$count]['problem'] = DOUBLE;
-      $signups['issues'][$count]['period'] = $period;
-      $signups['issues'][$count]['course1'] = $course['course'];
-      $signups['issues'][$count]['signup1'] = $row['signup_nid'];
-      $signups['issues'][$count]['course2'] = $signups[$period]['course'];
-      $signups['issues'][$count]['signup2'] = $signups[$period]['signup'];
+    $person = $row['person_nid'];
+    // if this is the first entry for this person, initialize counts
+    if (!isset($signups[$person])) {
+      $signups[$person]['points'] = 0;
+      $signups[$person]['fees'] = 0;
+      $signups[$person]['issues']['count'] = 0;
+    }
+
+    if (isset($signups[$person][$period])) {
+      $count = $signups[$person]['issues']['count']++;
+      $signups[$person]['issues'][$count]['problem'] = DOUBLE;
+      $signups[$person]['issues'][$count]['period'] = $period;
+      $signups[$person]['issues'][$count]['course1'] = $course['course'];
+      $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups[$person]['issues'][$count]['course2'] = $signups[$period]['course'];
+      $signups[$person]['issues'][$count]['signup2'] = $signups[$period]['signup'];
     } else { // not a double -- just store the info
-      $signups[$period]['course'] = $course['course'];
-      $signups[$period]['signup'] = $row['signup_nid'];
-      $signups['fees'] += $course['fee'];
+      $signups[$person][$period]['course'] = $course['course'];
+      $signups[$person][$period]['signup'] = $row['signup_nid'];
+      $signups[$person]['fees'] += $course['fee'];
     }
   }
 
   // *****************************
   // NOW DO THE VOLUNTEER SIGNUPS FOR THE SAME PERSON
 
-  $select = 'SELECT signup_fields.field_vol_job_nid AS job_nid, '.
-            'signup_node.nid AS signup_nid, '.
-            'signup_fields.field_vol_signup_course_nid AS course_nid ';
-  $from = 'FROM {node} AS signup_node ';
-  // get access to the signup fields
-  $join_signup = 'JOIN {content_type_volunteer_signup} AS signup_fields '.
-                 'ON signup_node.vid = signup_fields.vid ';
-  // get access to the person field (so we can filter for the right person)
-  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
-                 'ON signup_node.vid = signup_person_field.vid ';
-  // get access to the session, linked from the course (so we can filter
-  // for the right session)
-  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
-                  'ON course_session_field.nid = '.
-                  'signup_fields.field_vol_signup_course_nid ';
-  $where_type = 'WHERE signup_node.type=\'volunteer_signup\' ';
-  $where_person = 'AND signup_person_field.field_person_nid = '. $person_nid .' ';
-  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
-
-  $query = db_query($select . $from . $join_signup . $join_person . $join_session .
-                    $where_type . $where_person . $where_session);
-
+  $query = _get_volunteer_signup_query($session_nid);
   // each row is one job for this person from this session.
   while ($row = db_fetch_array($query)) {
     // get the info about the course
@@ -236,20 +176,25 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                       'ON course_node.vid = course_period_field.vid '.
                                       'WHERE course_node.nid = '. $row['course_nid']));
     $period = $course['period_nid'];
-
+    $person = $row['person_nid'];
+      // if this is the first entry for this person, initialize counts
+    if (!isset($signups[$person])) {
+      $signups[$person]['points'] = 0;
+      $signups[$person]['fees'] = 0;
+      $signups[$person]['issues']['count'] = 0;
+    }
     // check if this is a double signup
-    if (isset($signups[$period])) {
-      if (!isset($signups['issues'])) $signups['issues']['count'] = 0;
-      $count = $signups['issues']['count']++;
-      $signups['issues'][$count]['problem'] = DOUBLE;
-      $signups['issues'][$count]['period'] = $period;
-      $signups['issues'][$count]['course1'] = $course['course'];
-      $signups['issues'][$count]['signup1'] = $row['signup_nid'];
-      $signups['issues'][$count]['course2'] = $signups[$period]['course'];
-      $signups['issues'][$count]['signup2'] = $signups[$period]['signup'];
+    if (isset($signups[$person][$period])) {
+      $count = $signups[$person]['issues']['count']++;
+      $signups[$person]['issues'][$count]['problem'] = DOUBLE;
+      $signups[$person]['issues'][$count]['period'] = $period;
+      $signups[$person]['issues'][$count]['course1'] = $course['course'];
+      $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups[$person]['issues'][$count]['course2'] = $signups[$period]['course'];
+      $signups[$person]['issues'][$count]['signup2'] = $signups[$period]['signup'];
     } else { // it's not a double, just store the info
-      $signups[$period]['course'] = $course['course'];
-      $signups[$period]['signup'] = $row['signup_nid'];
+      $signups[$person][$period]['course'] = $course['course'];
+      $signups[$person][$period]['signup'] = $row['signup_nid'];
       // and the info about the job
       $job = db_fetch_array(db_query('SELECT job_node.title AS job, '.
                                      'job_fields.field_vol_job_points_value AS points '.
@@ -257,27 +202,94 @@ function _signups_get_schedule_person ($session_nid, $person_nid) {
                                      'JOIN {content_type_volunteer_job_type} AS job_fields '.
                                      'ON job_node.vid = job_fields.vid '.
                                      'WHERE job_node.nid = '. $row['job_nid']));
-      $signups[$period]['job'] = $job['job'];
-      $signups['points'] += $job['points'];
+      $signups[$person][$period]['job'] = $job['job'];
+      $signups[$person]['points'] += $job['points'];
     }
   }
 
   // check if any of the required signups are missing
   foreach (array(PERIOD1, PERIOD2, PERIOD3, PERIOD4) as $period) {
-    if (!isset($signups[$period])) {
-      if (!isset($signups['issues']['count'])) $signups['issues']['count'] = 0;
-      $count = $signups['issues']['count']++;
-      $signups['issues'][$count]['problem'] = MISSING;
-      $signups['issues'][$count]['period'] = $period;
+    if (!isset($signups[$person][$period])) {
+      if (!isset($signups[$person]['issues']['count'])) $signups['issues']['count'] = 0;
+      $count = $signups[$person]['issues']['count']++;
+      $signups[$person]['issues'][$count]['problem'] = MISSING;
+      $signups[$person]['issues'][$count]['period'] = $period;
     }
   }
   return $signups;
 }
 
 /**
+ * build the query for course signups
+ * @param int $session_nid the node id of the session
+ * @return the db_query object to use with db_fetch_array
+ *        the query will return 'course_nid', 'signup_nid',
+ *        'person_nid'
+ */
+function _get_course_signup_query ($session_nid) {
+  $select = 'SELECT signup_course_field.field_signup_course_nid AS course_nid, '.
+            'signup_node.nid AS signup_nid, '.
+            'signup_person_field.field_person_nid AS person_nid ';
+  $from = 'FROM {node} AS signup_node ';
+  // get access to the course field (so we can get the course nid to be used
+  // in a separate query because this one is already too complex)
+  $join_course = 'JOIN {content_type_course_signup} AS signup_course_field '.
+                 'ON signup_node.vid = signup_course_field.vid ';
+  // get access to the person field (so we can sort by person)
+  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
+                 'ON signup_node.vid = signup_person_field.vid ';
+  // get access to the session, linked from the course (so we can filter
+  // for the right session)
+  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
+                  'ON course_session_field.nid = '.
+                  'signup_course_field.field_signup_course_nid ';
+  $where_type = 'WHERE signup_node.type=\'course_signup\' ';
+  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
+
+  // get the course signups for this person
+  $query = db_query($select . $from . $join_course . $join_person . $join_session .
+                    $where_type . $where_session);
+
+  return $query;
+}
+
+/**
+ * build the query for course signups
+ * @param int $session_nid the node id of the session
+ * @return the db_query object to use with db_fetch_array
+ *        the query will return 'job_nid', 'signup_nid',
+ *        'person_nid', and 'course_nid'
+ */
+function _get_volunteer_signup_query ($session_nid) {
+  $select = 'SELECT signup_fields.field_vol_job_nid AS job_nid, '.
+      'signup_node.nid AS signup_nid, '.
+      'signup_person_field.field_person_nid AS person_nid, '.
+      'signup_fields.field_vol_signup_course_nid AS course_nid ';
+  $from = 'FROM {node} AS signup_node ';
+  // get access to the signup fields
+  $join_signup = 'JOIN {content_type_volunteer_signup} AS signup_fields '.
+      'ON signup_node.vid = signup_fields.vid ';
+  // get access to the person field (so we can filter for the right person)
+  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
+      'ON signup_node.vid = signup_person_field.vid ';
+  // get access to the session, linked from the course (so we can filter
+  // for the right session)
+  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
+      'ON course_session_field.nid = '.
+      'signup_fields.field_vol_signup_course_nid ';
+  $where_type = 'WHERE signup_node.type=\'volunteer_signup\' ';
+  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
+
+  $query = db_query($select . $from . $join_signup . $join_person . $join_session .
+      $where_type . $where_session);
+
+  return $query;
+}
+
+/**
  * print all of the issues
  */
-function _signups_print_issues ($signups) {
+function _print_issues ($signups) {
   $result = '<h1>Issues</h1>';
   $result .= '<ul>';
   foreach ($signups as $family => $family_signups) {
@@ -311,13 +323,13 @@ function _signups_print_issues ($signups) {
  *        if a period is missing, it means no assignment for that period (which is legal)
  * @return a nicely formatted listing of the information
  */
-function _signups_print_page($signups) {
-  $result = _signups_print_issues($signups);
+function _print_page($signups) {
+  $result = _print_issues($signups);
   $result .= '<h1>All Signups</h1>';
   $result .= '<ul>';
   // loop through the families
   foreach ($signups as $family => $signups_for_family) {
-    $result .= '<li>'. _signups_print_one_family($family, $signups_for_family) .'</li>';
+    $result .= '<li>'. _print_one_family($family, $signups_for_family) .'</li>';
   }
   $result .= '</ul>';
   return $result;
@@ -331,24 +343,19 @@ function _signups_print_page($signups) {
  *        if a period is missing, it means no assignment for that period (which is legal)
  * @return a nicely formatted html output of the schedule
  */
-function _signups_print_one_family ($family, $signups) {
+function _print_one_family ($family, $signups) {
   // calculate points and for the family (they're already done per person)
-  $points = 0;
-  $fees = 0;
-  foreach ($signups as $signups_for_person) {
-    $points += $signups_for_person['points'];
-    $fees += $signups_for_person['fees'];
-  }
   $result = '<h1>'. $family .'</h1>';
-  $result .= 'points: '. $points;
+  $result .= 'points: '. $signups['points'];
+  $fees = $signups['fees'];
   if ($fees != 0) {
     $result .= sprintf(' fees: $%01.2f paypal: $%01.2f', $fees, ($fees+.3)/.971);
   }
   $result .= "<table border=\"1\">";
   $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
              '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
-  foreach ($signups as $person => $signups_for_person) {
-    $result .= _signups_print_one_person($person, $signups_for_person);
+  foreach ($signups['people'] as $person => $signups_for_person) {
+    $result .= _print_one_person($person, $signups_for_person);
   }
   $result .= '</table>';
   return $result;
@@ -361,15 +368,15 @@ function _signups_print_one_family ($family, $signups) {
  *        by the period nid for each period (blank if there is no assignment for a given period)
  * @return a nicely formatted table row with the information for one person
  */
-function _signups_print_one_person ($name, $signups) {
+function _print_one_person ($name, $signups) {
   $result = '<tr><th>'. $name .'</th>';
-  $result .= _signups_print_one_period(BEFORE, $signups);
-  $result .= _signups_print_one_period(PERIOD1, $signups);
-  $result .= _signups_print_one_period(PERIOD2, $signups);
-  $result .= _signups_print_one_period(LUNCH, $signups);
-  $result .= _signups_print_one_period(PERIOD3, $signups);
-  $result .= _signups_print_one_period(PERIOD4, $signups);
-  $result .= _signups_print_one_period(AFTER, $signups);
+  $result .= _print_one_period(BEFORE, $signups);
+  $result .= _print_one_period(PERIOD1, $signups);
+  $result .= _print_one_period(PERIOD2, $signups);
+  $result .= _print_one_period(LUNCH, $signups);
+  $result .= _print_one_period(PERIOD3, $signups);
+  $result .= _print_one_period(PERIOD4, $signups);
+  $result .= _print_one_period(AFTER, $signups);
   $result .= '</tr>';
   return $result;
 }
@@ -383,7 +390,7 @@ function _signups_print_one_person ($name, $signups) {
  *              it gracefully)
  * @return string the <td></td> enclosed information for this period
  */
-function _signups_print_one_period ($period, $signups) {
+function _print_one_period ($period, $signups) {
   $result .= '<td>';
   if (isset($signups[$period])) {
     $result .= "<a href=\"../../node/". $signups[$period]['signup'] ."\">".

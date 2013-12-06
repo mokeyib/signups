@@ -3,4 +3,4 @@ name = "Signups"
 description = "Handle course signups"
 core = 6.x
 php = 5.2
-version = 6.x-1
+version = 6.x-2
