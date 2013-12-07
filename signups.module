@@ -44,8 +44,20 @@ function signups_menu () {
      'access arguments' => array('administer site configuration'),
      'type' => MENU_CALLBACK,
    );
+   $items['schedule/family_schedule/%'] = array(
+       'title' => 'Get Signups',
+       'page callback' => '_get_family_signups',
+       'page arguments' => array(2),
+       'access arguments' => array('view own schedule'),
+       'type' => MENU_CALLBACK,
+   );
 
    return $items;
+}
+
+function signups_perm () {
+  return array('view own schedule',
+               'view all signups');
 }
 
 /**
@@ -56,16 +68,59 @@ function signups_menu () {
  */
 function _get_signups ($session_name) {
   // get the nid from the session_name
-  $query = db_query('SELECT node.nid AS nid '.
-      'FROM {node} AS node '.
-      'WHERE node.title = \''. $session_name .'\'');
-  $session = db_fetch_object($query);
-  $session_nid = $session->nid;
+  $session_nid = _get_session_nid($session_name);
 
   // get all signups, indexed by family name, then person name
   $signups = _get_sorted_signups($session_nid);
 
   return _print_page($signups);
+}
+
+/**
+ * get (and print) the schedule for the current family
+ * @param string $session_name the session name in the form 2014 Winter
+ * @return string the output for the page
+ */
+function _get_family_signups ($session_name) {
+  // get all signups, indexed by family name, then person name
+  $signups = _get_sorted_signups(_get_session_nid($session_name));
+
+  // get the current family
+  $family = _get_current_family_name();
+
+  $result = "<hr/><h1>PLEASE DO NOT PAY YOUR FEES UNTIL AN ANNOUNCEMENT IS MADE ON THE E-GROUP. ".
+      "FEES LISTED ARE AN ESTIMATE AND ARE SUBJECT TO CHANGE. ".
+      "CLASSES MAY BE CANCELED IF THEY DO NOT FILL.</h1><hr/>\n";
+  $result .= _print_one_family($family, $signups['families'][$family]);
+  $result .= "<h1>Issues</h1>\n";
+  $result .= _print_family_issues($family, $signups['families'][$family]);
+  return $result;
+}
+
+/**
+ * get the name of the family for the current user
+ * @return the text name of the family for the current user
+ */
+function _get_current_family_name () {
+  global $user;
+
+  $query = db_query('SELECT node.title AS name '.
+      'FROM {node} AS node '.
+      'WHERE node.type = \'family\' AND node.uid = '. $user->uid);
+  $family = db_fetch_object($query);
+  return $family->name;
+}
+
+/**
+ * given the session name, return the session nid
+ * @param string $session_name the session name in the form 2014 Winter
+ */
+function _get_session_nid ($session_name) {
+  $query = db_query('SELECT node.nid AS nid '.
+      'FROM {node} AS node '.
+      'WHERE node.title = \''. $session_name .'\'');
+  $session = db_fetch_object($query);
+  return $session->nid;
 }
 
 /**
@@ -106,8 +161,7 @@ function _get_sorted_signups ($session_nid) {
   }
 
   // check through the families to make sure that everyone who
-  // needs an assignment has one.
-  // @todo check the no assignment value
+  // needs an assignment has one. If there's someone who is completely missing, add them
   foreach ($sorted_signups['families'] as $family => $family_signups) {
     $query = db_query('SELECT node.nid AS person_nid '.
         'FROM {node} AS node '.
@@ -118,12 +172,29 @@ function _get_sorted_signups ($session_nid) {
         'WHERE (type=\'child\' or type=\'adult\') '.
         'AND gone.field_person_no_assignment_value = \'No\' '.
         'AND family_field.field_person_family_nid = '. $family_signups['nid']);
-    while ($person = db_fetch_array($query)) {
-      if (!isset($signups[$person['person_nid']])) {
-        $person = _get_person($person['person_nid']);
+    // for each person in this family who needs an assignment each period...
+    while ($person_obj = db_fetch_array($query)) {
+      // get the information for this person given the nid
+      $person = _get_person($person_obj['person_nid']);
+      // if that person has _no_ assignments, add them
+      if (!isset($signups[$person_obj['person_nid']])) {
         $sorted_signups['families'][$person->family_name]['people'][$person->name] = array();
       }
+      // check if any of the required periods are missing for this person
+      foreach (array(PERIOD1, PERIOD2, PERIOD3, PERIOD4) as $period) {
+        $person_signups = $sorted_signups['families'][$person->family_name]['people'][$person->name];
+        if (!isset($sorted_signups['families'][$person->family_name]['people'][$person->name][$period])) {
+          if (!isset($sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'])) {
+            $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'] = 0;
+          }
+          $count = ++$sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'];
+          $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues'][$count]['problem'] = MISSING;
+          $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues'][$count]['period'] = $period;
+        }
+      }
     }
+    // sort the names within the family
+    ksort($sorted_signups['families'][$family]['people']);
   }
 
   // sort the families by key (family name)
@@ -244,15 +315,6 @@ function _get_signups_indexed_by_person ($session_nid) {
     }
   }
 
-  // check if any of the required signups are missing
-  foreach (array(PERIOD1, PERIOD2, PERIOD3, PERIOD4) as $period) {
-    if (!isset($signups[$person][$period])) {
-      if (!isset($signups[$person]['issues']['count'])) $signups['issues']['count'] = 0;
-      $count = ++$signups[$person]['issues']['count'];
-      $signups[$person]['issues'][$count]['problem'] = MISSING;
-      $signups[$person]['issues'][$count]['period'] = $period;
-    }
-  }
   return $signups;
 }
 
@@ -341,26 +403,38 @@ function _print_issues ($signups) {
 
   $result .= "<ul>\n";
   foreach ($signups['families'] as $family => $family_signups) {
-    foreach ($family_signups['people'] as $person => $person_signups) {
-      if (isset($person_signups['issues'])) {
-        for ($i = 1; $i <= $person_signups['issues']['count']; $i++) {
-          $issue = $person_signups['issues'][$i];
-          $result .= '<li> '. $family .': '. $person .': '. $issue['problem'];
-          if ($issue['problem'] == MISSING) {
-            $result .= " ". _get_period_name($issue['period']);
-          } else {
-            $result .= " ". _get_period_name($issue['period']) ." ".
-                "<a href=\"../../node/". $issue[signup1] ."\">".
-                $issue['course1'] ."</a> and ".
-                "<a href=\"../../node/". $issue[signup2] ."\">".
-                $issue['course2'] ."</a>";
-          }
-          $result .= "</li>\n";
+    $result .= _print_family_issues($family, $family_signups);
+  }
+  $result .= "</ul>\n";
+  return $result;
+}
+
+/**
+ * return the printable version of the issues for one family
+ * @param string $family the name of the family
+ * @param array $family_signups the signups array for that family. It will contain
+ *    'people' which has the signups and issues for each person in the family
+ * @return string the result to print
+ */
+function _print_family_issues ($family, $family_signups) {
+  foreach ($family_signups['people'] as $person => $person_signups) {
+    if (isset($person_signups['issues'])) {
+      for ($i = 1; $i <= $person_signups['issues']['count']; $i++) {
+        $issue = $person_signups['issues'][$i];
+        $result .= "<li> ". $family .": ". $person .': '. $issue['problem'];
+        if ($issue['problem'] == MISSING) {
+          $result .= " ". _get_period_name($issue['period']);
+        } else {
+          $result .= " ". _get_period_name($issue['period']) ." ".
+              "<a href=\"../../node/". $issue[signup1] ."\">".
+              $issue['course1'] ."</a> and ".
+              "<a href=\"../../node/". $issue[signup2] ."\">".
+              $issue['course2'] ."</a>";
         }
+        $result .= "</li>\n";
       }
     }
   }
-  $result .= "</ul>\n";
   return $result;
 }
 
@@ -393,19 +467,29 @@ function _print_page($signups) {
  */
 function _print_one_family ($family, $signups) {
   // calculate points and for the family (they're already done per person)
-  $result = '<h1>'. $family .'</h1>';
-  $result .= 'points: '. $signups['points'];
+  $result = "<h1>". $family ."</h1>\n";
+  $result .= "points: ". $signups['points'];
+  if ($signups['points'] < 12) {
+    $result .= " (not eligible for discount next session)<br/>\n";
+  } else {
+    $result .= " (eligible for discount next session)<br/>\n";
+  }
   $fees = $signups['fees'];
   if ($fees != 0) {
-    $result .= sprintf(' fees: $%01.2f paypal: $%01.2f', $fees, ($fees+.3)/.971);
+    $result .= sprintf(" fees: $%01.2f paypal: $%01.2f\n", $fees, ($fees+.3)/.971);
   }
-  $result .= "<table border=\"1\">";
-  $result .= '<tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>'.
-             '<th>Period 3</th><th>Period 4</th><th>After</th></tr>';
+  $result .= "<table>";
+  $result .= "<thead><tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>".
+             "<th>Period 3</th><th>Period 4</th><th>After</th></tr></thead>\n";
+  $result .= "<tbody>";
+  $oddeven = "odd";
   foreach ($signups['people'] as $person => $signups_for_person) {
-    $result .= _print_one_person($person, $signups_for_person);
+    $result .= _print_one_person($person, $signups_for_person, $oddeven);
+    // switch odd/even
+    if ($oddeven === "odd") $oddeven = "even"; else $oddeven = "odd";
   }
-  $result .= '</table>';
+  $result .= "</tbody>";
+  $result .= "</table>";
   return $result;
 }
 
@@ -414,10 +498,11 @@ function _print_one_family ($family, $signups) {
  * @param string $name the name of the person
  * @param array $signups the array containing information about this person's signups, indexed
  *        by the period nid for each period (blank if there is no assignment for a given period)
+ * @param oddeven "odd" or "even" to be used in the tr class
  * @return a nicely formatted table row with the information for one person
  */
-function _print_one_person ($name, $signups) {
-  $result = '<tr><th>'. $name .'</th>';
+function _print_one_person ($name, $signups, $oddeven) {
+  $result = "<tr class=\"". $oddeven ."\"><th>". $name ."</th>";
   $result .= _print_one_period(BEFORE, $signups);
   $result .= _print_one_period(PERIOD1, $signups);
   $result .= _print_one_period(PERIOD2, $signups);
@@ -425,7 +510,7 @@ function _print_one_person ($name, $signups) {
   $result .= _print_one_period(PERIOD3, $signups);
   $result .= _print_one_period(PERIOD4, $signups);
   $result .= _print_one_period(AFTER, $signups);
-  $result .= '</tr>';
+  $result .= "</tr>";
   return $result;
 }
 
@@ -439,7 +524,7 @@ function _print_one_person ($name, $signups) {
  * @return string the <td></td> enclosed information for this period
  */
 function _print_one_period ($period, $signups) {
-  $result .= '<td>';
+  $result .= "<td>";
   if (isset($signups[$period])) {
     $result .= "<a href=\"../../node/". $signups[$period]['signup'] ."\">".
                $signups[$period]['course'] .'</a>';
