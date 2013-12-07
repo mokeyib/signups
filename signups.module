@@ -261,8 +261,8 @@ function _get_signups_indexed_by_person ($session_nid) {
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
       $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
-      $signups[$person]['issues'][$count]['course2'] = $signups[$period]['course'];
-      $signups[$person]['issues'][$count]['signup2'] = $signups[$period]['signup'];
+      $signups[$person]['issues'][$count]['course2'] = $signups[$person][$period]['course'];
+      $signups[$person]['issues'][$count]['signup2'] = $signups[$person][$period]['signup'];
     } else { // not a double -- just store the info
       $signups[$person][$period]['course'] = $course['course'];
       $signups[$person][$period]['signup'] = $row['signup_nid'];
