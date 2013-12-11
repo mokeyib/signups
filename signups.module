@@ -20,6 +20,10 @@ define(MEMBER, 7);
 define(MISSING, 'MISSING');
 define(DOUBLE, 'DOUBLE');
 define(MISSING_PERSON, 'MISSING PERSON');
+// the ids for certain jobs
+define(TEACHER, 146);
+define(TEACHING_ASSISTANT, 147);
+define(ROOM_MONITOR, 148);
 
 /**
  * implementation of hook_help()
@@ -34,18 +38,37 @@ function signups_help ($path, $arg) {
 
 /**
  * Implementation of hook_menu()
+ * this defines pages for this module
+ * @return an array of the pages
  */
 function signups_menu () {
-   // a page for getting signups for all paid members
+   // a page for getting all signup information for a session
    $items['admin/signups/%'] = array(
-   	 'title' => 'Get Signups',
+   	 'title' => 'All Signup Information',
      'page callback' => '_get_signups',
      'page arguments' => array(2),
-     'access arguments' => array('administer site configuration'),
+     'access arguments' => array('view all signup info'),
      'type' => MENU_CALLBACK,
    );
+   // a page for getting all point information for a session
+   $items['admin/points/%'] = array(
+   	 'title' => 'Points Summary',
+     'page callback' => '_get_points',
+     'page arguments' => array(2),
+     'access arguments' => array('view all signup info'),
+     'type' => MENU_CALLBACK,
+   );
+   // a page for all fees to be paid
+   $items['admin/fees_summary/%'] = array(
+   	 'title' => 'Fees Summary',
+     'page callback' => '_get_fees',
+     'page arguments' => array(2),
+     'access arguments' => array('view all signup info'),
+     'type' => MENU_CALLBACK,
+   );
+   // a page to display all signup information for one family
    $items['schedule/family_schedule/%'] = array(
-       'title' => 'Get Signups',
+       'title' => 'Family Schedule',
        'page callback' => '_get_family_signups',
        'page arguments' => array(2),
        'access arguments' => array('view own schedule'),
@@ -55,9 +78,14 @@ function signups_menu () {
    return $items;
 }
 
+/**
+ * Implementation of hook_perm()
+ * define which permissions to use for this module
+ * @return array of permissions for this module
+ */
 function signups_perm () {
   return array('view own schedule',
-               'view all signups');
+               'view all signup info');
 }
 
 /**
@@ -69,6 +97,7 @@ function signups_perm () {
 function _get_signups ($session_name) {
   // get the nid from the session_name
   $session_nid = _get_session_nid($session_name);
+  // FIXME handle bad session_name gracefully
 
   // get all signups, indexed by family name, then person name
   $signups = _get_sorted_signups($session_nid);
@@ -78,23 +107,118 @@ function _get_signups ($session_name) {
 
 /**
  * get (and print) the schedule for the current family
- * @param string $session_name the session name in the form 2014 Winter
+ *
+ * @param string $session_name
+ *          the session name in the form 2014 Winter
  * @return string the output for the page
  */
-function _get_family_signups ($session_name) {
+function _get_family_signups($session_name) {
   // get all signups, indexed by family name, then person name
-  $signups = _get_sorted_signups(_get_session_nid($session_name));
+  $signups = _get_sorted_signups ( _get_session_nid ( $session_name ) );
+  // FIXME handle bad session_name gracefully
 
   // get the current family
-  $family = _get_current_family_name();
+  $family = _get_current_family_name ();
 
-  $result = "<hr/><h1>PLEASE DO NOT PAY YOUR FEES UNTIL AN ANNOUNCEMENT IS MADE ON THE E-GROUP. ".
-      "FEES LISTED ARE AN ESTIMATE AND ARE SUBJECT TO CHANGE. ".
+  $result = "<hr/><h1>PLEASE DO NOT PAY YOUR FEES UNTIL AN ANNOUNCEMENT IS MADE ON THE E-GROUP. " . "FEES LISTED ARE AN ESTIMATE AND ARE SUBJECT TO CHANGE. ".
       "CLASSES MAY BE CANCELED IF THEY DO NOT FILL.</h1><hr/>\n";
   $result .= _print_one_family($family, $signups['families'][$family]);
   $result .= "<h1>Issues</h1>\n";
   $result .= _print_family_issues($family, $signups['families'][$family]);
   return $result;
+}
+
+/**
+ * print a point summary
+ * @param name $session_name the name of the session in the form 2014 Winter
+ * @return string the html string to print
+ */
+function _get_points ($session_name) {
+  // get all signups, indexed by family name, then person name
+  $signups = _get_sorted_signups(_get_session_nid($session_name));
+  // FIXME handle bad session_name gracefully
+
+  return _print_points($signups);
+}
+
+/**
+ * print a fee summary
+ * @param name $session_name the name of the session in the form 2014 Winter
+ * @return string the html string to print
+ */
+function _get_fees ($session_name) {
+  // get all signups, indexed by person nid
+  $session_nid = _get_session_nid($session_name);
+  // FIXME handle bad session_name gracefully
+
+  // query the database to get all courses for this session that have fees
+  $course_query = db_query('SELECT node.title AS name, '.
+      'node.nid AS course_nid, '.
+      'fee_field.field_course_fee_value AS fee '.
+      'FROM {node} AS node '.
+      'JOIN {content_field_course_session} AS session_field '.
+      'ON node.vid = session_field.vid '.
+      'JOIN {content_field_course_fee} AS fee_field '.
+      'ON node.vid = fee_field.vid '.
+      'WHERE node.type = \'course\' '.
+      'AND fee_field.field_course_fee_value != 0 '.
+      'AND session_field.field_course_session_nid = '. $session_nid);
+  $fees = array();
+  while ($course = db_fetch_array($course_query)) {
+    // First, count the signups for this course
+    $signup_query = db_query('SELECT node.nid AS nid '.
+        'FROM {node} AS node '.
+        'JOIN {content_type_course_signup} AS course_field '.
+        'ON node.vid = course_field.vid '.
+        'WHERE node.type = \'course_signup\' '.
+        'AND course_field.field_signup_course_nid = '. $course['course_nid']);
+    $count = 0;
+    while ($signup = db_fetch_array($signup_query)) {
+      $count++;
+    }
+    $fees[$course['name']]['fees'] = $count * $course['fee'];
+    $fees[$course['name']]['students'] = $count;
+
+    // get the list of teachers
+    $query_string = 'SELECT person_node.title AS name '.
+        'FROM {node} AS node '.
+        // get access to the volunteer signup fields
+        'JOIN {content_type_volunteer_signup} AS signup_fields '.
+        'ON node.vid = signup_fields.vid '.
+        // get access to the person (for the output)
+        'JOIN {content_field_person} AS person_field '.
+        'ON node.vid = person_field.vid '.
+        // get the person's name
+        'JOIN {node} AS person_node '.
+        'ON person_node.nid = person_field.field_person_nid '.
+        'WHERE node.type = \'volunteer_signup\' '.
+        'AND signup_fields.field_vol_signup_course_nid = '. $course['course_nid'] .' '.
+        'AND signup_fields.field_vol_job_nid = ';
+    $signup_query = db_query($query_string . TEACHER);
+    $teachers = '';
+    while ($signup = db_fetch_array($signup_query)) {
+      if ($teachers != '') $teachers .= ", ";
+      $teachers .= $signup['name'];
+    }
+    // if there are no teachers, use TAs
+    if ($teachers == '') {
+      $signup_query = db_query($query_string . TEACHING_ASSISTANT);
+      while ($signup = db_fetch_array($signup_query)) {
+        if ($teachers != '') $teachers .= ", ";
+        $teachers .= $signup['name'];
+      }
+    }
+    // if there are still no teachers, use Room Monitors
+    if ($teachers == '') {
+      $signup_query = db_query($query_string . ROOM_MONITOR);
+      while ($signup = db_fetch_array($signup_query)) {
+        if ($teachers != '') $teachers .= ", ";
+        $teachers .= $signup['name'];
+      }
+    }
+    $fees[$course['name']]['teachers'] = $teachers;
+  }
+  return _print_fees($fees);
 }
 
 /**
@@ -201,6 +325,7 @@ function _get_sorted_signups ($session_nid) {
   ksort($sorted_signups['families']);
   return $sorted_signups;
 }
+
 /**
  * for the given person, query to get the name and family information
  * @param int $person_nid the person node id
@@ -298,8 +423,8 @@ function _get_signups_indexed_by_person ($session_nid) {
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
       $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
-      $signups[$person]['issues'][$count]['course2'] = $signups[$period]['course'];
-      $signups[$person]['issues'][$count]['signup2'] = $signups[$period]['signup'];
+      $signups[$person]['issues'][$count]['course2'] = $signups[$person][$period]['course'];
+      $signups[$person]['issues'][$count]['signup2'] = $signups[$person][$period]['signup'];
     } else { // it's not a double, just store the info
       $signups[$person][$period]['course'] = $course['course'];
       $signups[$person][$period]['signup'] = $row['signup_nid'];
@@ -406,6 +531,50 @@ function _print_issues ($signups) {
     $result .= _print_family_issues($family, $family_signups);
   }
   $result .= "</ul>\n";
+  return $result;
+}
+
+/**
+ * print the points summary
+ * @param array $signups the signups array (@see _get_sorted_signups($session_nid))
+ * @return string the html string to print
+ */
+function _print_points ($signups) {
+  $result = "<ul>\n";
+  // loop through the families
+  $points = array();
+  foreach ($signups['families'] as $family => $signups_for_family) {
+    $points[$family] = $signups_for_family['points'];
+  }
+  arsort($points);
+  $under12 = FALSE;
+  foreach ($points as $family => $point_value) {
+    // put a line between those that are 12+ and under 12 (the cut-off for discount)
+    if ($point_value < 12 && !$under12) {
+      $result .= "<hr/>\n";
+      $under12 = TRUE;
+    }
+    $result .= "<li>". $family . ": ". $point_value ."</li>\n";
+  }
+  $result .= "</ul>\n";
+  return $result;
+}
+
+/**
+ * print the fee summary
+ * @param array $fees an array of fees indexed by course name
+ * @return string the html string to print
+ */
+function _print_fees ($fees) {
+  $result = "<ul>\n";
+  $total = 0;
+  foreach ($fees as $course => $fee_info) {
+    $result .= "<li>". $course ." [". $fee_info['teachers'] ."] (".
+        $fee_info['students'] ."): ". $fee_info['fees'] ."</li>\n";
+    $total += $fee;
+  }
+  $result .= "</ul>\n";
+  $result .= "<h1>TOTAL: ". $total ."</h1>\n";
   return $result;
 }
 
