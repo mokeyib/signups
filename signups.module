@@ -573,7 +573,7 @@ function _print_points ($signups) {
  */
 function _print_fees ($signups, $fees) {
   // START WITH FEES OWED TO TEACHERS (money to be collected)
-  $result = "<h1>Fees to collect</h1>\n";
+  $result = "<h2>Fees to collect</h2>\n";
   $result .= "<ul>\n";
   foreach ($signups['families'] as $family => $family_signups) {
     if ($family_signups['fees'] != 0) {
@@ -585,7 +585,7 @@ function _print_fees ($signups, $fees) {
   $result .= "</ul>\n";
 
   // NOW FIGURE OUT FEES TO BE PAID TO TEACHERS (checks to write)
-  $result .= "<h1>Fees to pay</h1>\n";
+  $result .= "<h2>Fees to pay</h2>\n";
   $result .= "<ul>\n";
   $total = 0;
   foreach ($fees as $course => $fee_info) {
@@ -594,7 +594,7 @@ function _print_fees ($signups, $fees) {
     $total += $fee_info['fees'];
   }
   $result .= "</ul>\n";
-  $result .= "<h1>TOTAL: " . _money($total) ."</h1>\n";
+  $result .= "<h2>TOTAL: " . _money($total) ."</h2>\n";
   return $result;
 }
 
