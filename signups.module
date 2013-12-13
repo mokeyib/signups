@@ -577,7 +577,9 @@ function _print_fees ($signups, $fees) {
   $result .= "<ul>\n";
   foreach ($signups['families'] as $family => $family_signups) {
     if ($family_signups['fees'] != 0) {
-      $result .= "<li>". $family .": ". $family_signups['fees'] ."</li>\n";
+      $fee = $family_signups['fees'];
+      $result_fees = sprintf("fees: $%01.2f paypal: $%01.2f\n", $fee, _paypal($fee));
+      $result .= "<li>". $family ."| ". $result_fees ."</li>\n";
     }
   }
   $result .= "</ul>\n";
@@ -663,7 +665,7 @@ function _print_one_family ($family, $signups) {
   }
   $fees = $signups['fees'];
   if ($fees != 0) {
-    $result .= sprintf(" fees: $%01.2f paypal: $%01.2f\n", $fees, ($fees+.3)/.971);
+    $result .= sprintf(" fees: $%01.2f paypal: $%01.2f\n", $fees, _paypal($fees));
   }
   $result .= "<table>";
   $result .= "<thead><tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>".
@@ -721,6 +723,15 @@ function _print_one_period ($period, $signups) {
   }
   $result .= '</td>';
   return $result;
+}
+
+/**
+ * calculate the fee amount including paypal fees
+ * @param int fee the fee owed to co-op
+ * @return the fee including paypal fees
+ */
+function _paypal ($fees) {
+  return ($fees+.3)/.971;
 }
 
 /**
