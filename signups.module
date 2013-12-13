@@ -95,9 +95,14 @@ function signups_perm () {
  * @return the html formatted output
  */
 function _get_signups ($session_name) {
+  $session_name = check_plain($session_name);
+
   // get the nid from the session_name
   $session_nid = _get_session_nid($session_name);
-  // FIXME handle bad session_name gracefully
+
+  if ($session_nid == -1) {
+    return "<h1>Illegal session name: ". $session_name ."</h1>\n";
+  }
 
   // get all signups, indexed by family name, then person name
   $signups = _get_sorted_signups($session_nid);
@@ -112,13 +117,20 @@ function _get_signups ($session_name) {
  *          the session name in the form 2014 Winter
  * @return string the output for the page
  */
-function _get_family_signups($session_name) {
+function _get_family_signups ($session_name) {
+  $session_name = check_plain($session_name);
+
+  // get the nid from the session_name
+  $session_nid = _get_session_nid($session_name);
+
+  if ($session_nid == -1) {
+    return "<h1>Illegal session name: ". $session_name ."</h1>\n";
+  }
   // get all signups, indexed by family name, then person name
-  $signups = _get_sorted_signups ( _get_session_nid ( $session_name ) );
-  // FIXME handle bad session_name gracefully
+  $signups = _get_sorted_signups ($session_nid);
 
   // get the current family
-  $family = _get_current_family_name ();
+  $family = _get_current_family_name();
 
   $result = "<hr/><h1>PLEASE DO NOT PAY YOUR FEES UNTIL AN ANNOUNCEMENT IS MADE ON THE E-GROUP. " . "FEES LISTED ARE AN ESTIMATE AND ARE SUBJECT TO CHANGE. ".
       "CLASSES MAY BE CANCELED IF THEY DO NOT FILL.</h1><hr/>\n";
@@ -137,9 +149,16 @@ function _get_family_signups($session_name) {
  * @return string the html string to print
  */
 function _get_points ($session_name) {
+  $session_name = check_plain($session_name);
+
+  // get the nid from the session_name
+  $session_nid = _get_session_nid($session_name);
+
+  if ($session_nid == -1) {
+    return "<h1>Illegal session name: ". $session_name ."</h1>\n";
+  }
   // get all signups, indexed by family name, then person name
-  $signups = _get_sorted_signups(_get_session_nid($session_name));
-  // FIXME handle bad session_name gracefully
+  $signups = _get_sorted_signups($session_nid);
 
   return _print_points($signups);
 }
@@ -150,9 +169,14 @@ function _get_points ($session_name) {
  * @return string the html string to print
  */
 function _get_fees ($session_name) {
-  // get all signups, indexed by person nid
+  $session_name = check_plain($session_name);
+
+  // get the nid from the session_name
   $session_nid = _get_session_nid($session_name);
-  // FIXME handle bad session_name gracefully
+
+  if ($session_nid == -1) {
+    return "<h1>Illegal session name: ". $session_name ."</h1>\n";
+  }
 
   // get signup info for fees owed
   $signups = _get_sorted_signups($session_nid);
@@ -160,26 +184,26 @@ function _get_fees ($session_name) {
   // now calculate fees to be paid to each teacher
 
   // query the database to get all courses for this session that have fees
-  $course_query = db_query('SELECT node.title AS name, '.
-      'node.nid AS course_nid, '.
-      'fee_field.field_course_fee_value AS fee '.
-      'FROM {node} AS node '.
-      'JOIN {content_field_course_session} AS session_field '.
-      'ON node.vid = session_field.vid '.
-      'JOIN {content_field_course_fee} AS fee_field '.
-      'ON node.vid = fee_field.vid '.
-      'WHERE node.type = \'course\' '.
-      'AND fee_field.field_course_fee_value != 0 '.
-      'AND session_field.field_course_session_nid = '. $session_nid);
+  $course_query = db_query("SELECT node.title AS name, ".
+      "node.nid AS course_nid, ".
+      "fee_field.field_course_fee_value AS fee ".
+      "FROM {node} AS node ".
+      "JOIN {content_field_course_session} AS session_field ".
+      "ON node.vid = session_field.vid ".
+      "JOIN {content_field_course_fee} AS fee_field ".
+      "ON node.vid = fee_field.vid ".
+      "WHERE node.type = \'course\' ".
+      "AND fee_field.field_course_fee_value != 0 ".
+      "AND session_field.field_course_session_nid = %d", $session_nid);
   $fees = array();
   while ($course = db_fetch_array($course_query)) {
     // First, count the signups for this course
-    $signup_query = db_query('SELECT node.nid AS nid '.
-        'FROM {node} AS node '.
-        'JOIN {content_type_course_signup} AS course_field '.
-        'ON node.vid = course_field.vid '.
-        'WHERE node.type = \'course_signup\' '.
-        'AND course_field.field_signup_course_nid = '. $course['course_nid']);
+    $signup_query = db_query("SELECT node.nid AS nid ".
+        "FROM {node} AS node ".
+        "JOIN {content_type_course_signup} AS course_field ".
+        "ON node.vid = course_field.vid ".
+        "WHERE node.type = \'course_signup\' ".
+        "AND course_field.field_signup_course_nid = %d", $course['course_nid']);
     $count = 0;
     while ($signup = db_fetch_array($signup_query)) {
       $count++;
@@ -188,21 +212,21 @@ function _get_fees ($session_name) {
     $fees[$course['name']]['students'] = $count;
 
     // get the list of teachers
-    $query_string = 'SELECT person_node.title AS name '.
-        'FROM {node} AS node '.
+    $query_string = "SELECT person_node.title AS name ".
+        "FROM {node} AS node ".
         // get access to the volunteer signup fields
-        'JOIN {content_type_volunteer_signup} AS signup_fields '.
-        'ON node.vid = signup_fields.vid '.
+        "JOIN {content_type_volunteer_signup} AS signup_fields ".
+        "ON node.vid = signup_fields.vid ".
         // get access to the person (for the output)
-        'JOIN {content_field_person} AS person_field '.
-        'ON node.vid = person_field.vid '.
+        "JOIN {content_field_person} AS person_field ".
+        "ON node.vid = person_field.vid ".
         // get the person's name
-        'JOIN {node} AS person_node '.
-        'ON person_node.nid = person_field.field_person_nid '.
-        'WHERE node.type = \'volunteer_signup\' '.
-        'AND signup_fields.field_vol_signup_course_nid = '. $course['course_nid'] .' '.
-        'AND signup_fields.field_vol_job_nid = ';
-    $signup_query = db_query($query_string . TEACHER);
+        "JOIN {node} AS person_node ".
+        "ON person_node.nid = person_field.field_person_nid ".
+        "WHERE node.type = \'volunteer_signup\' ".
+        "AND signup_fields.field_vol_signup_course_nid = %d ".
+        "AND signup_fields.field_vol_job_nid = %d";
+    $signup_query = db_query($query_string, $course['course_nid'], TEACHER);
     $teachers = '';
     while ($signup = db_fetch_array($signup_query)) {
       if ($teachers != '') $teachers .= ", ";
@@ -236,9 +260,9 @@ function _get_fees ($session_name) {
 function _get_current_family_name () {
   global $user;
 
-  $query = db_query('SELECT node.title AS name '.
-      'FROM {node} AS node '.
-      'WHERE node.type = \'family\' AND node.uid = '. $user->uid);
+  $query = db_query("SELECT node.title AS name ".
+      "FROM {node} AS node ".
+      "WHERE node.type = \'family\' AND node.uid = %d", $user->uid);
   $family = db_fetch_object($query);
   return $family->name;
 }
@@ -246,12 +270,15 @@ function _get_current_family_name () {
 /**
  * given the session name, return the session nid
  * @param string $session_name the session name in the form 2014 Winter
+ * @return the session_nid. If $session_name is not a valid session, return -1
  */
 function _get_session_nid ($session_name) {
-  $query = db_query('SELECT node.nid AS nid '.
-      'FROM {node} AS node '.
-      'WHERE node.title = \''. $session_name .'\'');
+  $query = db_query("SELECT node.nid AS nid ".
+      "FROM {node} AS node ".
+      "WHERE node.type = \'session\' ".
+      "AND node.title = \'%s\'", $session_name);
   $session = db_fetch_object($query);
+  if (!$session) return -1;
   return $session->nid;
 }
 
@@ -287,15 +314,15 @@ function _get_sorted_signups ($session_nid) {
   // check through the families to make sure that everyone who
   // needs an assignment has one. If there's someone who is completely missing, add them
   foreach ($sorted_signups['families'] as $family => $family_signups) {
-    $query = db_query('SELECT node.nid AS person_nid '.
-        'FROM {node} AS node '.
-        'JOIN {content_field_person_family} AS family_field '.
-        'ON node.vid = family_field.vid '.
-        'JOIN {content_field_person_no_assignment} AS gone '.
-        'ON node.vid = gone.vid '.
-        'WHERE (type=\'child\' or type=\'adult\') '.
-        'AND gone.field_person_no_assignment_value = \'No\' '.
-        'AND family_field.field_person_family_nid = '. $family_signups['nid']);
+    $query = db_query("SELECT node.nid AS person_nid ".
+        "FROM {node} AS node ".
+        "JOIN {content_field_person_family} AS family_field ".
+        "ON node.vid = family_field.vid ".
+        "JOIN {content_field_person_no_assignment} AS gone ".
+        "ON node.vid = gone.vid ".
+        "WHERE (type=\'child\' or type=\'adult\') ".
+        "AND gone.field_person_no_assignment_value = \'No\' ".
+        "AND family_field.field_person_family_nid = %d", $family_signups['nid']);
     // for each person in this family who needs an assignment each period...
     while ($person_obj = db_fetch_array($query)) {
       // get the information for this person given the nid
@@ -332,15 +359,15 @@ function _get_sorted_signups ($session_nid) {
  * @return the person array including 'name', 'family_name', and 'family_nid'
  */
 function _get_person ($person_nid) {
-  $query = db_query('SELECT node.title AS name, '.
-      'family.title AS family_name, '.
-      'family.nid AS family_nid '.
-      'FROM {node} AS node '.
-      'JOIN {content_field_person_family} AS family_field '.
-      'ON node.vid = family_field.vid '.
-      'JOIN {node} AS family '.
-      'ON family.nid = family_field.field_person_family_nid '.
-      'WHERE node.nid = '. $person_nid);
+  $query = db_query("SELECT node.title AS name, ".
+      "family.title AS family_name, ".
+      "family.nid AS family_nid ".
+      "FROM {node} AS node ".
+      "JOIN {content_field_person_family} AS family_field ".
+      "ON node.vid = family_field.vid ".
+      "JOIN {node} AS family ".
+      "ON family.nid = family_field.field_person_family_nid ".
+      "WHERE node.nid = %d", $person_nid);
   return db_fetch_object($query);
 }
 
@@ -361,15 +388,15 @@ function _get_signups_indexed_by_person ($session_nid) {
   // get each signup for this this session.
   while ($signup = db_fetch_array($query)) {
     // now get the title of the course and the period it is in
-    $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
-                                      'course_period_field.field_course_period_nid AS period_nid, '.
-                                      'course_fee_field.field_course_fee_value AS fee '.
-                                      'FROM {node} AS course_node '.
-                                      'JOIN {content_type_course} AS course_period_field '.
-                                      'ON course_node.vid = course_period_field.vid '.
-                                      'JOIN {content_field_course_fee} AS course_fee_field '.
-                                      'ON course_node.vid = course_fee_field.vid '.
-                                      'WHERE course_node.nid = '. $signup['course_nid']));
+    $course = db_fetch_array(db_query("SELECT course_node.title AS course, ".
+        "course_period_field.field_course_period_nid AS period_nid, ".
+        "course_fee_field.field_course_fee_value AS fee ".
+        "FROM {node} AS course_node ".
+        "JOIN {content_type_course} AS course_period_field ".
+        "ON course_node.vid = course_period_field.vid ".
+        "JOIN {content_field_course_fee} AS course_fee_field ".
+        "ON course_node.vid = course_fee_field.vid ".
+        "WHERE course_node.nid = %d", $signup['course_nid']));
     // check if this is a double signup
     $period = $course['period_nid'];
     $person = $signup['person_nid'];
@@ -411,12 +438,12 @@ function _get_signups_indexed_by_person ($session_nid) {
   // get each job for this person from this session.
   while ($signup = db_fetch_array($query)) {
     // get the info about the course
-    $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
-                                      'course_period_field.field_course_period_nid AS period_nid '.
-                                      'FROM {node} as course_node '.
-                                      'JOIN {content_type_course} as course_period_field '.
-                                      'ON course_node.vid = course_period_field.vid '.
-                                      'WHERE course_node.nid = '. $signup['course_nid']));
+    $course = db_fetch_array(db_query("SELECT course_node.title AS course, ".
+        "course_period_field.field_course_period_nid AS period_nid ".
+        "FROM {node} as course_node ".
+        "JOIN {content_type_course} as course_period_field ".
+        "ON course_node.vid = course_period_field.vid ".
+        "WHERE course_node.nid = %d", $signup['course_nid']));
     $period = $course['period_nid'];
     $person = $signup['person_nid'];
     // if this is the first entry for this person, initialize counts
@@ -438,12 +465,12 @@ function _get_signups_indexed_by_person ($session_nid) {
       $signups[$person]['issues'][$count]['signup2'] = $signups[$person][$period]['signup'];
     } else { // it's not a double
       // get the info about the job
-      $job = db_fetch_array(db_query('SELECT job_node.title AS job, '.
-          'job_fields.field_vol_job_points_value AS points '.
-          'FROM {node} as job_node '.
-          'JOIN {content_type_volunteer_job_type} AS job_fields '.
-          'ON job_node.vid = job_fields.vid '.
-          'WHERE job_node.nid = '. $signup['job_nid']));
+      $job = db_fetch_array(db_query("SELECT job_node.title AS job, ".
+          "job_fields.field_vol_job_points_value AS points ".
+          "FROM {node} as job_node ".
+          "JOIN {content_type_volunteer_job_type} AS job_fields ".
+          "ON job_node.vid = job_fields.vid ".
+          "WHERE job_node.nid = %d", $signup['job_nid']));
       // if there is no person for this job, store the issue
       if ($person == '') {
         $count = ++$signups[$person]['issues']['count'];
@@ -473,28 +500,28 @@ function _get_signups_indexed_by_person ($session_nid) {
  *        'person_nid'
  */
 function _get_course_signup_query ($session_nid) {
-  $select = 'SELECT signup_course_field.field_signup_course_nid AS course_nid, '.
-            'signup_node.nid AS signup_nid, '.
-            'signup_person_field.field_person_nid AS person_nid ';
-  $from = 'FROM {node} AS signup_node ';
+  $select = "SELECT signup_course_field.field_signup_course_nid AS course_nid, ".
+            "signup_node.nid AS signup_nid, ".
+            "signup_person_field.field_person_nid AS person_nid ";
+  $from = "FROM {node} AS signup_node ";
   // get access to the course field (so we can get the course nid to be used
   // in a separate query because this one is already too complex)
-  $join_course = 'JOIN {content_type_course_signup} AS signup_course_field '.
-                 'ON signup_node.vid = signup_course_field.vid ';
+  $join_course = "JOIN {content_type_course_signup} AS signup_course_field ".
+                 "ON signup_node.vid = signup_course_field.vid ";
   // get access to the person field (so we can sort by person)
-  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
-                 'ON signup_node.vid = signup_person_field.vid ';
+  $join_person = "JOIN {content_field_person} AS signup_person_field ".
+                 "ON signup_node.vid = signup_person_field.vid ";
   // get access to the session, linked from the course (so we can filter
   // for the right session)
-  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
-                  'ON course_session_field.nid = '.
-                  'signup_course_field.field_signup_course_nid ';
-  $where_type = 'WHERE signup_node.type=\'course_signup\' ';
-  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
+  $join_session = "JOIN {content_field_course_session} AS course_session_field ".
+                  "ON course_session_field.nid = ".
+                  "signup_course_field.field_signup_course_nid ";
+  $where_type = "WHERE signup_node.type=\'course_signup\' ";
+  $where_session = "AND course_session_field.field_course_session_nid = %d";
 
   // get the course signups for this person
   $query = db_query($select . $from . $join_course . $join_person . $join_session .
-                    $where_type . $where_session);
+                    $where_type . $where_session, $session_nid);
 
   return $query;
 }
@@ -507,27 +534,27 @@ function _get_course_signup_query ($session_nid) {
  *        'person_nid', and 'course_nid'
  */
 function _get_volunteer_signup_query ($session_nid) {
-  $select = 'SELECT signup_fields.field_vol_job_nid AS job_nid, '.
-      'signup_node.nid AS signup_nid, '.
-      'signup_person_field.field_person_nid AS person_nid, '.
-      'signup_fields.field_vol_signup_course_nid AS course_nid ';
-  $from = 'FROM {node} AS signup_node ';
+  $select = "SELECT signup_fields.field_vol_job_nid AS job_nid, ".
+      "signup_node.nid AS signup_nid, ".
+      "signup_person_field.field_person_nid AS person_nid, ".
+      "signup_fields.field_vol_signup_course_nid AS course_nid ";
+  $from = "FROM {node} AS signup_node ";
   // get access to the signup fields
-  $join_signup = 'JOIN {content_type_volunteer_signup} AS signup_fields '.
-      'ON signup_node.vid = signup_fields.vid ';
+  $join_signup = "JOIN {content_type_volunteer_signup} AS signup_fields ".
+      "ON signup_node.vid = signup_fields.vid ";
   // get access to the person field (so we can filter for the right person)
-  $join_person = 'JOIN {content_field_person} AS signup_person_field '.
-      'ON signup_node.vid = signup_person_field.vid ';
+  $join_person = "JOIN {content_field_person} AS signup_person_field ".
+      "ON signup_node.vid = signup_person_field.vid ";
   // get access to the session, linked from the course (so we can filter
   // for the right session)
-  $join_session = 'JOIN {content_field_course_session} AS course_session_field '.
-      'ON course_session_field.nid = '.
-      'signup_fields.field_vol_signup_course_nid ';
-  $where_type = 'WHERE signup_node.type=\'volunteer_signup\' ';
-  $where_session = 'AND course_session_field.field_course_session_nid = '. $session_nid;
+  $join_session = "JOIN {content_field_course_session} AS course_session_field ".
+      "ON course_session_field.nid = ".
+      "signup_fields.field_vol_signup_course_nid ";
+  $where_type = "WHERE signup_node.type=\'volunteer_signup\' ";
+  $where_session = "AND course_session_field.field_course_session_nid = %d";
 
   $query = db_query($select . $from . $join_signup . $join_person . $join_session .
-      $where_type . $where_session);
+      $where_type . $where_session, $session_nid);
 
   return $query;
 }
