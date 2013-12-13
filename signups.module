@@ -594,7 +594,7 @@ function _print_fees ($signups, $fees) {
     $total += $fee_info['fees'];
   }
   $result .= "</ul>\n";
-  $result .= "<h1>TOTAL: ". $total ."</h1>\n";
+  $result .= "<h1>TOTAL: " . sprintf("$%01.2f", $total) ."</h1>\n";
   return $result;
 }
 
