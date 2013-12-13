@@ -151,6 +151,11 @@ function _get_fees ($session_name) {
   $session_nid = _get_session_nid($session_name);
   // FIXME handle bad session_name gracefully
 
+  // get signup info for fees owed
+  $signups = _get_sorted_signups($session_nid);
+
+  // now calculate fees to be paid to each teacher
+
   // query the database to get all courses for this session that have fees
   $course_query = db_query('SELECT node.title AS name, '.
       'node.nid AS course_nid, '.
@@ -218,7 +223,7 @@ function _get_fees ($session_name) {
     }
     $fees[$course['name']]['teachers'] = $teachers;
   }
-  return _print_fees($fees);
+  return _print_fees($signups, $fees);
 }
 
 /**
@@ -358,8 +363,8 @@ function _get_signups_indexed_by_person ($session_nid) {
 
   // get all the course signups
   $query = _get_course_signup_query($session_nid);
-  // each row is one signup for this this session.
-  while ($row = db_fetch_array($query)) {
+  // get each signup for this this session.
+  while ($signup = db_fetch_array($query)) {
     // now get the title of the course and the period it is in
     $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
                                       'course_period_field.field_course_period_nid AS period_nid, '.
@@ -369,10 +374,10 @@ function _get_signups_indexed_by_person ($session_nid) {
                                       'ON course_node.vid = course_period_field.vid '.
                                       'JOIN {content_field_course_fee} AS course_fee_field '.
                                       'ON course_node.vid = course_fee_field.vid '.
-                                      'WHERE course_node.nid = '. $row['course_nid']));
+                                      'WHERE course_node.nid = '. $signup['course_nid']));
     // check if this is a double signup
     $period = $course['period_nid'];
-    $person = $row['person_nid'];
+    $person = $signup['person_nid'];
     // if this is the first entry for this person, initialize counts
     if (!isset($signups[$person])) {
       $signups[$person]['points'] = 0;
@@ -385,12 +390,12 @@ function _get_signups_indexed_by_person ($session_nid) {
       $signups[$person]['issues'][$count]['problem'] = DOUBLE;
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
-      $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups[$person]['issues'][$count]['signup1'] = $signup['signup_nid'];
       $signups[$person]['issues'][$count]['course2'] = $signups[$person][$period]['course'];
       $signups[$person]['issues'][$count]['signup2'] = $signups[$person][$period]['signup'];
     } else { // not a double -- just store the info
       $signups[$person][$period]['course'] = $course['course'];
-      $signups[$person][$period]['signup'] = $row['signup_nid'];
+      $signups[$person][$period]['signup'] = $signup['signup_nid'];
       $signups[$person]['fees'] += $course['fee'];
     }
   }
@@ -399,17 +404,17 @@ function _get_signups_indexed_by_person ($session_nid) {
   // NOW DO THE VOLUNTEER SIGNUPS FOR THE SAME PERSON
 
   $query = _get_volunteer_signup_query($session_nid);
-  // each row is one job for this person from this session.
-  while ($row = db_fetch_array($query)) {
+  // get each job for this person from this session.
+  while ($signup = db_fetch_array($query)) {
     // get the info about the course
     $course = db_fetch_array(db_query('SELECT course_node.title AS course, '.
                                       'course_period_field.field_course_period_nid AS period_nid '.
                                       'FROM {node} as course_node '.
                                       'JOIN {content_type_course} as course_period_field '.
                                       'ON course_node.vid = course_period_field.vid '.
-                                      'WHERE course_node.nid = '. $row['course_nid']));
+                                      'WHERE course_node.nid = '. $signup['course_nid']));
     $period = $course['period_nid'];
-    $person = $row['person_nid'];
+    $person = $signup['person_nid'];
       // if this is the first entry for this person, initialize counts
     if (!isset($signups[$person])) {
       $signups[$person]['points'] = 0;
@@ -422,19 +427,19 @@ function _get_signups_indexed_by_person ($session_nid) {
       $signups[$person]['issues'][$count]['problem'] = DOUBLE;
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
-      $signups[$person]['issues'][$count]['signup1'] = $row['signup_nid'];
+      $signups[$person]['issues'][$count]['signup1'] = $signup['signup_nid'];
       $signups[$person]['issues'][$count]['course2'] = $signups[$person][$period]['course'];
       $signups[$person]['issues'][$count]['signup2'] = $signups[$person][$period]['signup'];
     } else { // it's not a double, just store the info
       $signups[$person][$period]['course'] = $course['course'];
-      $signups[$person][$period]['signup'] = $row['signup_nid'];
+      $signups[$person][$period]['signup'] = $signup['signup_nid'];
       // and the info about the job
       $job = db_fetch_array(db_query('SELECT job_node.title AS job, '.
                                      'job_fields.field_vol_job_points_value AS points '.
                                      'FROM {node} as job_node '.
                                      'JOIN {content_type_volunteer_job_type} AS job_fields '.
                                      'ON job_node.vid = job_fields.vid '.
-                                     'WHERE job_node.nid = '. $row['job_nid']));
+                                     'WHERE job_node.nid = '. $signup['job_nid']));
       $signups[$person][$period]['job'] = $job['job'];
       $signups[$person]['points'] += $job['points'];
     }
@@ -562,16 +567,29 @@ function _print_points ($signups) {
 
 /**
  * print the fee summary
+ * @param array $signups all signups
  * @param array $fees an array of fees indexed by course name
  * @return string the html string to print
  */
-function _print_fees ($fees) {
-  $result = "<ul>\n";
+function _print_fees ($signups, $fees) {
+  // START WITH FEES OWED TO TEACHERS (money to be collected)
+  $result = "<h1>Fees to collect</h1>\n";
+  $result .= "<ul>\n";
+  foreach ($signups['families'] as $family => $family_signups) {
+    if ($family_signups['fees'] != 0) {
+      $result .= "<li>". $family .": ". $family_signups['fees'] ."</li>\n";
+    }
+  }
+  $result .= "</ul>\n";
+
+  // NOW FIGURE OUT FEES TO BE PAID TO TEACHERS (checks to write)
+  $result .= "<h1>Fees to pay</h1>\n";
+  $result .= "<ul>\n";
   $total = 0;
   foreach ($fees as $course => $fee_info) {
     $result .= "<li>". $course ." [". $fee_info['teachers'] ."] (".
         $fee_info['students'] ."): ". $fee_info['fees'] ."</li>\n";
-    $total += $fee;
+    $total += $fee_info['fees'];
   }
   $result .= "</ul>\n";
   $result .= "<h1>TOTAL: ". $total ."</h1>\n";
