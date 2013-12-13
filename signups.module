@@ -578,8 +578,8 @@ function _print_fees ($signups, $fees) {
   foreach ($signups['families'] as $family => $family_signups) {
     if ($family_signups['fees'] != 0) {
       $fee = $family_signups['fees'];
-      $result_fees = sprintf("fees: $%01.2f paypal: $%01.2f\n", $fee, _paypal($fee));
-      $result .= "<li>". $family ."| ". $result_fees ."</li>\n";
+      $result .= "<li>". $family .":: fees: ". _money($fee) ." paypal: ".
+          _money(_paypal($fee)) ."</li>\n";
     }
   }
   $result .= "</ul>\n";
@@ -590,11 +590,11 @@ function _print_fees ($signups, $fees) {
   $total = 0;
   foreach ($fees as $course => $fee_info) {
     $result .= "<li>". $course ." [". $fee_info['teachers'] ."] (".
-        $fee_info['students'] ."): ". $fee_info['fees'] ."</li>\n";
+        $fee_info['students'] ."): ". _money($fee_info['fees']) ."</li>\n";
     $total += $fee_info['fees'];
   }
   $result .= "</ul>\n";
-  $result .= "<h1>TOTAL: " . sprintf("$%01.2f", $total) ."</h1>\n";
+  $result .= "<h1>TOTAL: " . _money($total) ."</h1>\n";
   return $result;
 }
 
@@ -665,7 +665,8 @@ function _print_one_family ($family, $signups) {
   }
   $fees = $signups['fees'];
   if ($fees != 0) {
-    $result .= sprintf(" fees: $%01.2f paypal: $%01.2f\n", $fees, _paypal($fees));
+    $result .= " fees: ". _money($fees) ." paypal: ".
+        _money(_paypal($fees)) ."\n";
   }
   $result .= "<table>";
   $result .= "<thead><tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>".
@@ -732,6 +733,15 @@ function _print_one_period ($period, $signups) {
  */
 function _paypal ($fees) {
   return ($fees+.3)/.971;
+}
+
+/**
+ * take a number and format it as a dollar value
+ * @param number $fees the number
+ * @return string the formatted string
+ */
+function _money ($fees) {
+  return sprintf("$%01.2f", $fees);
 }
 
 /**
