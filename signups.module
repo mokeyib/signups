@@ -192,7 +192,7 @@ function _get_fees ($session_name) {
       "ON node.vid = session_field.vid ".
       "JOIN {content_field_course_fee} AS fee_field ".
       "ON node.vid = fee_field.vid ".
-      "WHERE node.type = \'course\' ".
+      "WHERE node.type = 'course' ".
       "AND fee_field.field_course_fee_value != 0 ".
       "AND session_field.field_course_session_nid = %d", $session_nid);
   $fees = array();
@@ -202,7 +202,7 @@ function _get_fees ($session_name) {
         "FROM {node} AS node ".
         "JOIN {content_type_course_signup} AS course_field ".
         "ON node.vid = course_field.vid ".
-        "WHERE node.type = \'course_signup\' ".
+        "WHERE node.type = 'course_signup' ".
         "AND course_field.field_signup_course_nid = %d", $course['course_nid']);
     $count = 0;
     while ($signup = db_fetch_array($signup_query)) {
@@ -223,7 +223,7 @@ function _get_fees ($session_name) {
         // get the person's name
         "JOIN {node} AS person_node ".
         "ON person_node.nid = person_field.field_person_nid ".
-        "WHERE node.type = \'volunteer_signup\' ".
+        "WHERE node.type = 'volunteer_signup' ".
         "AND signup_fields.field_vol_signup_course_nid = %d ".
         "AND signup_fields.field_vol_job_nid = %d";
     $signup_query = db_query($query_string, $course['course_nid'], TEACHER);
@@ -262,7 +262,7 @@ function _get_current_family_name () {
 
   $query = db_query("SELECT node.title AS name ".
       "FROM {node} AS node ".
-      "WHERE node.type = \'family\' AND node.uid = %d", $user->uid);
+      "WHERE node.type = 'family' AND node.uid = %d", $user->uid);
   $family = db_fetch_object($query);
   return $family->name;
 }
@@ -275,8 +275,8 @@ function _get_current_family_name () {
 function _get_session_nid ($session_name) {
   $query = db_query("SELECT node.nid AS nid ".
       "FROM {node} AS node ".
-      "WHERE node.type = \'session\' ".
-      "AND node.title = \'%s\'", $session_name);
+      "WHERE node.type = 'session' ".
+      "AND node.title = '%s'", $session_name);
   $session = db_fetch_object($query);
   if (!$session) return -1;
   return $session->nid;
@@ -295,7 +295,7 @@ function _get_sorted_signups ($session_nid) {
 
   // sort by family, and replace person node ids with names
   $sorted_signups = array();
-  $sorted_signups['issues']['count'] = 0;
+  $sorted_signups['issues'];
   foreach ($signups as $person_nid => $person_signups) {
     // if person_nid is blank, it usually means a job with no one assigned yet
     // we've already stored the issue, just copy it over
@@ -320,8 +320,8 @@ function _get_sorted_signups ($session_nid) {
         "ON node.vid = family_field.vid ".
         "JOIN {content_field_person_no_assignment} AS gone ".
         "ON node.vid = gone.vid ".
-        "WHERE (type=\'child\' or type=\'adult\') ".
-        "AND gone.field_person_no_assignment_value = \'No\' ".
+        "WHERE (type='child' or type='adult') ".
+        "AND gone.field_person_no_assignment_value = 'No' ".
         "AND family_field.field_person_family_nid = %d", $family_signups['nid']);
     // for each person in this family who needs an assignment each period...
     while ($person_obj = db_fetch_array($query)) {
@@ -335,10 +335,7 @@ function _get_sorted_signups ($session_nid) {
       foreach (array(PERIOD1, PERIOD2, PERIOD3, PERIOD4) as $period) {
         $person_signups = $sorted_signups['families'][$person->family_name]['people'][$person->name];
         if (!isset($sorted_signups['families'][$person->family_name]['people'][$person->name][$period])) {
-          if (!isset($sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'])) {
-            $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'] = 0;
-          }
-          $count = ++$sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']['count'];
+          $count = count($sorted_signups['families'][$person->family_name]['people'][$person->name]['issues']);
           $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues'][$count]['problem'] = MISSING;
           $sorted_signups['families'][$person->family_name]['people'][$person->name]['issues'][$count]['period'] = $period;
         }
@@ -404,11 +401,10 @@ function _get_signups_indexed_by_person ($session_nid) {
     if (!isset($signups[$person])) {
       $signups[$person]['points'] = 0;
       $signups[$person]['fees'] = 0;
-      $signups[$person]['issues']['count'] = 0;
     }
 
     if (isset($signups[$person][$period])) {
-      $count = ++$signups[$person]['issues']['count'];
+      $count = count($signups[$person]['issues']);
       $signups[$person]['issues'][$count]['problem'] = DOUBLE;
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
@@ -418,7 +414,7 @@ function _get_signups_indexed_by_person ($session_nid) {
     } else { // not a double
       // if there is no person for this signup, store the issue
       if ($person == '') {
-        $count = ++$signups[$person]['issues']['count'];
+        $count = count($signups[$person]['issues']);
         $signups[$person]['issues'][$count]['problem'] = MISSING_PERSON;
         $signups[$person]['issues'][$count]['period'] = $period;
         $signups[$person]['issues'][$count]['course'] = $course['course'];
@@ -450,13 +446,12 @@ function _get_signups_indexed_by_person ($session_nid) {
     if (!isset($signups[$person])) {
       $signups[$person]['points'] = 0;
       $signups[$person]['fees'] = 0;
-      $signups[$person]['issues']['count'] = 0;
     }
 
     // if there is a person assigned to this job,
     // check if this is a double signup
     if ($person != '' && isset($signups[$person][$period])) {
-      $count = ++$signups[$person]['issues']['count'];
+      $count = count($signups[$person]['issues']);
       $signups[$person]['issues'][$count]['problem'] = DOUBLE;
       $signups[$person]['issues'][$count]['period'] = $period;
       $signups[$person]['issues'][$count]['course1'] = $course['course'];
@@ -473,7 +468,7 @@ function _get_signups_indexed_by_person ($session_nid) {
           "WHERE job_node.nid = %d", $signup['job_nid']));
       // if there is no person for this job, store the issue
       if ($person == '') {
-        $count = ++$signups[$person]['issues']['count'];
+        $count = count($signups[$person]['issues']);
         $signups[$person]['issues'][$count]['problem'] = MISSING_PERSON;
         $signups[$person]['issues'][$count]['period'] = $period;
         $signups[$person]['issues'][$count]['course'] = $course['course'];
@@ -516,7 +511,7 @@ function _get_course_signup_query ($session_nid) {
   $join_session = "JOIN {content_field_course_session} AS course_session_field ".
                   "ON course_session_field.nid = ".
                   "signup_course_field.field_signup_course_nid ";
-  $where_type = "WHERE signup_node.type=\'course_signup\' ";
+  $where_type = "WHERE signup_node.type='course_signup' ";
   $where_session = "AND course_session_field.field_course_session_nid = %d";
 
   // get the course signups for this person
@@ -550,7 +545,7 @@ function _get_volunteer_signup_query ($session_nid) {
   $join_session = "JOIN {content_field_course_session} AS course_session_field ".
       "ON course_session_field.nid = ".
       "signup_fields.field_vol_signup_course_nid ";
-  $where_type = "WHERE signup_node.type=\'volunteer_signup\' ";
+  $where_type = "WHERE signup_node.type='volunteer_signup' ";
   $where_session = "AND course_session_field.field_course_session_nid = %d";
 
   $query = db_query($select . $from . $join_signup . $join_person . $join_session .
@@ -561,14 +556,20 @@ function _get_volunteer_signup_query ($session_nid) {
 
 /**
  * print all of the issues
+ * @param array signups the signup information. issues are listed under
+ *     signups['issues']
+ * @return the html formatted output
  */
 function _print_issues ($signups) {
   $result = "<h1>Issues</h1>\n";
+  $result .= "<h2>Missing People</h2>\n";
   $result .= "<ul>\n";
-  for ($i = 1; $i <= $signups['issues']['count']; $i ++) {
-    $issue = $signups['issues'][$i];
-    $result .= "<li> ". $issue ['problem'] ." ".
-        _period_name($issue['period']) ." <a href=\"../../node/".
+  // sort the issues by period (this will group and order based on period_nid
+  // which is not necessarily meaningful)
+  usort($signups['issues'], '_issue_sort');
+  foreach ($signups['issues'] as $issue) {
+    $result .= "<li> ". _period_name($issue['period'])
+        ." <a href=\"../../node/".
         $issue[signup] ."\">". $issue['course'] ."</a>";
     if (isset($issue['job'])) {
       $result .= "--" . $issue['job'];
@@ -577,12 +578,28 @@ function _print_issues ($signups) {
   }
   $result .= "</ul>\n";
 
+  $result .= "<h2>Issues By Family</h2>\n";
   $result .= "<ul>\n";
   foreach ($signups['families'] as $family => $family_signups) {
+    $result .= "<li>". $family ."<ul>\n";
     $result .= _print_family_issues($family, $family_signups);
+    $result .= "</ul></li>\n";
   }
   $result .= "</ul>\n";
   return $result;
+}
+
+/**
+ * a sort function for the issues array we want to sort on the ['period'] value
+ * @param array $a
+ * @param array $b
+ * @return number -1 if $a should come before $b. 1 if $b should come before $a
+ *    0 if they're equal.
+ */
+function _issue_sort ($a, $b) {
+  // just check the period
+  if ($a['period'] == $b['period']) return 0;
+  return ($a['period'] < $b['period']) ? -1 : 1;
 }
 
 /**
@@ -654,9 +671,8 @@ function _print_fees ($signups, $fees) {
 function _print_family_issues ($family, $family_signups) {
   foreach ($family_signups['people'] as $person => $person_signups) {
     if (isset($person_signups['issues'])) {
-      for ($i = 1; $i <= $person_signups['issues']['count']; $i++) {
-        $issue = $person_signups['issues'][$i];
-        $result .= "<li> ". $family .": ". $person .': '. $issue['problem']
+      foreach ($person_signups['issues'] as $issue) {
+        $result .= "<li> ". $person .': '. $issue['problem']
             ." ". _period_name($issue['period']);
         if ($issue['problem'] != MISSING) {
           $result .= " <a href=\"../../node/". $issue[signup1] ."\">".
@@ -667,6 +683,10 @@ function _print_family_issues ($family, $family_signups) {
         $result .= "</li>\n";
       }
     }
+  }
+  // if there were no issues, say that
+  if (strlen($result) == 0) {
+    $result = "<li>No issues</li>\n";
   }
   return $result;
 }
