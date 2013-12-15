@@ -581,9 +581,12 @@ function _print_issues ($signups) {
   $result .= "<h2>Issues By Family</h2>\n";
   $result .= "<ul>\n";
   foreach ($signups['families'] as $family => $family_signups) {
-    $result .= "<li>". $family ."<ul>\n";
-    $result .= _print_family_issues($family, $family_signups);
-    $result .= "</ul></li>\n";
+    $issues = _print_family_issues($family, $family_signups);
+    if (strlen($issues) != 0) {
+      $result .= "<li>". $family ."<ul>\n";
+      $result .= $issues;
+      $result .= "</ul></li>\n";
+    }
   }
   $result .= "</ul>\n";
   return $result;
@@ -683,10 +686,6 @@ function _print_family_issues ($family, $family_signups) {
         $result .= "</li>\n";
       }
     }
-  }
-  // if there were no issues, say that
-  if (strlen($result) == 0) {
-    $result = "<li>No issues</li>\n";
   }
   return $result;
 }
