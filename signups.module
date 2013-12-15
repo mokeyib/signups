@@ -568,7 +568,7 @@ function _print_issues ($signups) {
   // which is not necessarily meaningful)
   usort($signups['issues'], '_issue_sort');
   foreach ($signups['issues'] as $issue) {
-    $result .= "<li> ". _period_name($issue['period'])
+    $result .= "<li>[ERROR] ". _period_name($issue['period'])
         ." <a href=\"../../node/".
         $issue[signup] ."\">". $issue['course'] ."</a>";
     if (isset($issue['job'])) {
@@ -675,7 +675,17 @@ function _print_family_issues ($family, $family_signups) {
   foreach ($family_signups['people'] as $person => $person_signups) {
     if (isset($person_signups['issues'])) {
       foreach ($person_signups['issues'] as $issue) {
-        $result .= "<li> ". $person .': '. $issue['problem']
+        $result .= "<li>";
+        // if this is not a class period, this may not actually be an error
+        if ($issue['problem'] == DOUBLE &&
+            ($issue['period'] == BEFORE ||
+             $issue['period'] == LUNCH ||
+             $issue['period'] == AFTER)) {
+          $result .= "[WARNING] ";
+        } else {
+          $result .= "[ERROR] ";
+        }
+        $result .= $person .': '. $issue['problem']
             ." ". _period_name($issue['period']);
         if ($issue['problem'] != MISSING) {
           $result .= " <a href=\"../../node/". $issue[signup1] ."\">".
