@@ -295,9 +295,8 @@ function _get_sorted_signups ($session_nid) {
 
   // sort by family, and replace person node ids with names
   $sorted_signups = array();
-  $sorted_signups['issues'];
   foreach ($signups as $person_nid => $person_signups) {
-    // if person_nid is blank, it usually means a job with no one assigned yet
+    // if person_nid is blank, it means a job with no one assigned yet
     // we've already stored the issue, just copy it over
     if ($person_nid === '') {
       $sorted_signups['issues'] = $person_signups['issues'];
@@ -562,11 +561,13 @@ function _get_volunteer_signup_query ($session_nid) {
  */
 function _print_issues ($signups) {
   $result = "<h1>Issues</h1>\n";
-  $result .= "<h2>Missing People</h2>\n";
-  $result .= "<ul>\n";
   // sort the issues by period (this will group and order based on period_nid
   // which is not necessarily meaningful)
-  usort($signups['issues'], '_issue_sort');
+  if (isset($signups['issues'])) {
+    $result .= "<h2>Missing People</h2>\n";
+    $result .= "<ul>\n";
+    usort($signups['issues'], '_issue_sort');
+  }
   foreach ($signups['issues'] as $issue) {
     $result .= "<li>[ERROR] ". _period_name($issue['period'])
         ." <a href=\"../../node/".
@@ -576,7 +577,9 @@ function _print_issues ($signups) {
     }
     $result .= "</li>\n";
   }
-  $result .= "</ul>\n";
+  if (isset($signups['issues'])) {
+    $result .= "</ul>\n";
+  }
 
   $result .= "<h2>Issues By Family</h2>\n";
   $result .= "<ul>\n";
