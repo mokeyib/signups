@@ -568,16 +568,16 @@ function _print_issues ($signups) {
     $result .= "<ul>\n";
     usort($signups['issues'], '_issue_sort');
   }
-  foreach ($signups['issues'] as $issue) {
-    $result .= "<li>[ERROR] ". _period_name($issue['period'])
-        ." <a href=\"../../node/".
-        $issue[signup] ."\">". $issue['course'] ."</a>";
-    if (isset($issue['job'])) {
-      $result .= "--" . $issue['job'];
-    }
-    $result .= "</li>\n";
-  }
   if (isset($signups['issues'])) {
+    foreach ($signups['issues'] as $issue) {
+      $result .= "<li>[ERROR] ". _period_name($issue['period'])
+          ." <a href=\"../../node/".
+          $issue[signup] ."\">". $issue['course'] ."</a>";
+      if (isset($issue['job'])) {
+        $result .= "--" . $issue['job'];
+      }
+      $result .= "</li>\n";
+    }
     $result .= "</ul>\n";
   }
 
