@@ -24,6 +24,19 @@ define(MISSING_PERSON, 'MISSING PERSON');
 define(TEACHER, 146);
 define(TEACHING_ASSISTANT, 147);
 define(ROOM_MONITOR, 148);
+// the ids for rooms
+define(GYM, 174);
+define(AUDITORIUM, 175);
+define(LOBBY, 177);
+define(MEETING, 178);
+define(GAME, 179);
+define(KITCHEN, 180);
+define(DANCE, 181);
+define(CERAMICS, 182);
+define(CLASSROOM, 183);
+define(ART1, 185);
+define(ART2, 186);
+define(OUTSIDE, 404);
 
 /**
  * implementation of hook_help()
@@ -46,6 +59,14 @@ function signups_menu () {
    $items['admin/signups/%'] = array(
    	 'title' => 'All Signup Information',
      'page callback' => '_get_signups',
+     'page arguments' => array(2),
+     'access arguments' => array('view all signup info'),
+     'type' => MENU_CALLBACK,
+   );
+   // a page for all signup information in a table for a session
+   $items['admin/signups_table/%'] = array(
+   	 'title' => 'All Signups',
+     'page callback' => '_get_signups_table',
      'page arguments' => array(2),
      'access arguments' => array('view all signup info'),
      'type' => MENU_CALLBACK,
@@ -89,9 +110,8 @@ function signups_perm () {
 }
 
 /**
- * get the signups for every person with the given role for the given session
+ * get the signups for every person for the given session
  * @param int $session_name the name of the session (in the form of 2014 Winter)
- * @param int $role_id the role id to use
  * @return the html formatted output
  */
 function _get_signups ($session_name) {
@@ -108,6 +128,37 @@ function _get_signups ($session_name) {
   $signups = _get_sorted_signups($session_nid);
 
   return _print_page($signups);
+}
+
+/**
+ * get the signups for every person for the given session in table format
+ * @param int $session_name the name of the session (in the form of 2014 Winter)
+ * @return the html formatted output
+ */
+function _get_signups_table ($session_name) {
+  $session_name = check_plain($session_name);
+
+  // get the nid from the session_name
+  $session_nid = _get_session_nid($session_name);
+
+  if ($session_nid == -1) {
+    return "<h1>Illegal session name: ". $session_name ."</h1>\n";
+  }
+
+  // get all signups, indexed by family name, then person name
+  $signups = _get_signups_indexed_by_person($session_nid);
+  // convert person nids to names
+  foreach ($signups as $person_nid => $person_signups) {
+    // sort by period
+    ksort($person_signups);
+
+    $person = _get_person($person_nid);
+    $name_signups[$person->name] = $person_signups;
+  }
+  // sort by name
+  ksort($name_signups);
+
+  return _print_table($name_signups);
 }
 
 /**
@@ -381,13 +432,16 @@ function _get_signups_indexed_by_person ($session_nid) {
   $query = _get_course_signup_query($session_nid);
   // get each signup for this this session.
   while ($signup = db_fetch_array($query)) {
-    // now get the title of the course and the period it is in
+    // now get the title of the course, the location, and the period it is in
     $course = db_fetch_array(db_query("SELECT course_node.title AS course, ".
         "course_period_field.field_course_period_nid AS period_nid, ".
+        "course_room_field.field_course_room_nid AS room_nid, ".
         "course_fee_field.field_course_fee_value AS fee ".
         "FROM {node} AS course_node ".
         "JOIN {content_type_course} AS course_period_field ".
         "ON course_node.vid = course_period_field.vid ".
+        "JOIN {content_field_course_room} AS course_room_field ".
+        "ON course_node.vid = course_room_field.vid ".
         "JOIN {content_field_course_fee} AS course_fee_field ".
         "ON course_node.vid = course_fee_field.vid ".
         "WHERE course_node.nid = %d", $signup['course_nid']));
@@ -419,6 +473,7 @@ function _get_signups_indexed_by_person ($session_nid) {
       } else { // this is a good signup, store the info
         $signups[$person][$period]['course'] = $course['course'];
         $signups[$person][$period]['signup'] = $signup['signup_nid'];
+        $signups[$person][$period]['room'] = $course['room_nid'];
         $signups[$person]['fees'] += $course['fee'];
       }
     }
@@ -432,8 +487,11 @@ function _get_signups_indexed_by_person ($session_nid) {
   while ($signup = db_fetch_array($query)) {
     // get the info about the course
     $course = db_fetch_array(db_query("SELECT course_node.title AS course, ".
+        "course_room_field.field_course_room_nid AS room_nid, ".
         "course_period_field.field_course_period_nid AS period_nid ".
         "FROM {node} as course_node ".
+        "JOIN {content_field_course_room} AS course_room_field ".
+        "ON course_node.vid = course_room_field.vid ".
         "JOIN {content_type_course} as course_period_field ".
         "ON course_node.vid = course_period_field.vid ".
         "WHERE course_node.nid = %d", $signup['course_nid']));
@@ -475,6 +533,7 @@ function _get_signups_indexed_by_person ($session_nid) {
         // so just store the info
         $signups[$person][$period]['course'] = $course['course'];
         $signups[$person][$period]['signup'] = $signup['signup_nid'];
+        $signups[$person][$period]['room'] = $course['room_nid'];
         $signups[$person][$period]['job'] = $job['job'];
         $signups[$person]['points'] += $job['points'];
       }
@@ -568,7 +627,7 @@ function _print_issues ($signups) {
   }
   if (isset($signups['issues'])) {
     foreach ($signups['issues'] as $issue) {
-      $result .= "<li>[ERROR] ". _period_name($issue['period'])
+      $result .= "<li>[ERROR] ". _get_period_name($issue['period'])
           ." <a href=\"../../node/".
           $issue[signup] ."\">". $issue['course'] ."</a>";
       if (isset($issue['job'])) {
@@ -687,7 +746,7 @@ function _print_family_issues ($family, $family_signups) {
           $result .= "[ERROR] ";
         }
         $result .= $person .': '. $issue['problem']
-            ." ". _period_name($issue['period']);
+            ." ". _get_period_name($issue['period']);
         if ($issue['problem'] != MISSING) {
           $result .= " <a href=\"../../node/". $issue[signup1] ."\">".
               $issue['course1'] ."</a> and ".
@@ -708,7 +767,7 @@ function _print_family_issues ($family, $family_signups) {
  *        if a period is missing, it means no assignment for that period (which is legal)
  * @return a nicely formatted listing of the information
  */
-function _print_page($signups) {
+function _print_page ($signups) {
   $result = _print_issues($signups);
   $result .= '<h1>All Signups</h1>';
   $result .= '<ul>';
@@ -717,6 +776,43 @@ function _print_page($signups) {
     $result .= '<li>'. _print_one_family($family, $signups_for_family) .'</li>';
   }
   $result .= '</ul>';
+  return $result;
+}
+
+/**
+ * print the entire schedule page
+ * @param array $signups the entire signups array, indexed by person
+ *        then by period, then with entries for course and optionally job
+ *        if a period is missing, it means no assignment for that period (which is legal)
+ * @return a nicely formatted listing of the information (as a table)
+ */
+function _print_table ($signups) {
+  $result = "<table>\n";
+  $result .= "<thead><tr><th>Period</th><th>Class</th><th>Job</th>".
+      "<th>Location</th><th>Name</th></tr></thead>\n";
+  $result .= "<tbody>";
+  $oddeven = "odd";
+  foreach ($signups as $person => $signups_for_person) {
+    foreach ($signups_for_person as $period => $signup) {
+      if ($period != "points" && $period != "fees") {
+        $result .= "<tr class=\"". $oddeven ."\">";
+        $result .= "<td>". _get_period_name($period) ."</td>";
+        $result .= "<td><a href=\"../../node/". $signup['signup'] ."\">".
+                   $signup['course'] ."</a></td>";
+        $result .= "<td>";
+        if (isset($signup['job'])) {
+          $result .= $signup['job'];
+        }
+        $result .= "</td>";
+        $result .= "<td>". _get_room_name($signup['room']) ."</td>";
+        $result .= "<td>". $person ."</td></tr>\n";
+      }
+    }
+    // switch odd/even
+    if ($oddeven === "odd") $oddeven = "even"; else $oddeven = "odd";
+  }
+  $result .= "</tbody>\n";
+  $result .= "</table>\n";
   return $result;
 }
 
@@ -745,15 +841,15 @@ function _print_one_family ($family, $signups) {
   $result .= "<table>";
   $result .= "<thead><tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>".
              "<th>Period 3</th><th>Period 4</th><th>After</th></tr></thead>\n";
-  $result .= "<tbody>";
+  $result .= "<tbody>\n";
   $oddeven = "odd";
   foreach ($signups['people'] as $person => $signups_for_person) {
     $result .= _print_one_person($person, $signups_for_person, $oddeven);
     // switch odd/even
     if ($oddeven === "odd") $oddeven = "even"; else $oddeven = "odd";
   }
-  $result .= "</tbody>";
-  $result .= "</table>";
+  $result .= "</tbody>\n";
+  $result .= "</table>\n";
   return $result;
 }
 
@@ -774,7 +870,7 @@ function _print_one_person ($name, $signups, $oddeven) {
   $result .= _print_one_period(PERIOD3, $signups);
   $result .= _print_one_period(PERIOD4, $signups);
   $result .= _print_one_period(AFTER, $signups);
-  $result .= "</tr>";
+  $result .= "</tr>\n";
   return $result;
 }
 
@@ -791,12 +887,12 @@ function _print_one_period ($period, $signups) {
   $result .= "<td>";
   if (isset($signups[$period])) {
     $result .= "<a href=\"../../node/". $signups[$period]['signup'] ."\">".
-               $signups[$period]['course'] .'</a>';
+               $signups[$period]['course'] ."</a>";
     if (isset($signups[$period]['job'])) {
-      $result .= "\n<em>". $signups[$period]['job'] .'</em>';
+      $result .= "\n<em>". $signups[$period]['job'] ."</em>";
     }
   }
-  $result .= '</td>';
+  $result .= "</td>";
   return $result;
 }
 
@@ -822,7 +918,7 @@ function _money ($fees) {
  * convert the period nid to a word
  * @param period_nid the node id of the period
  */
-function _period_name ($period_nid) {
+function _get_period_name ($period_nid) {
   switch ($period_nid) {
     case BEFORE:
       return "Before";
@@ -838,5 +934,40 @@ function _period_name ($period_nid) {
       return "Period 4";
     case AFTER:
       return "After";
+  }
+}
+
+/**
+ * convert the room nid to a word
+ * @param room_nid the node id of the room
+ */
+function _get_room_name ($room_nid) {
+  switch ($room_nid) {
+  	case GYM:
+  	  return "Gym";
+  	case AUDITORIUM:
+  	  return "Auditorium";
+  	case LOBBY:
+  	  return "Lobby";
+  	case MEETING:
+  	  return "Meeting Room";
+  	case GAME:
+  	  return "Game Room";
+  	case KITCHEN:
+  	  return "Kitchen";
+  	case DANCE:
+  	  return "Dance Room";
+  	case CERAMICS:
+  	  return "Ceramics Room";
+  	case CLASSROOM:
+  	  return "Classroom";
+  	case ART1:
+  	  return "Art Room 1";
+  	case ART2:
+  	  return "Art Room 2";
+  	case OUTSIDE:
+  	  return "Outside";
+  	default:
+  	  return "Unknown Room ". $room_nid;
   }
 }
