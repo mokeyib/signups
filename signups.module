@@ -72,6 +72,7 @@ function signups_menu () {
      'type' => MENU_CALLBACK,
    );
    // a page for getting all point information for a session
+/* POINTS
    $items['admin/points/%'] = array(
    	 'title' => 'Points Summary',
      'page callback' => '_get_points',
@@ -79,7 +80,7 @@ function signups_menu () {
      'access arguments' => array('view all signup info'),
      'type' => MENU_CALLBACK,
    );
-   // a page for all fees to be paid
+ */  // a page for all fees to be paid
    $items['admin/fees_summary/%'] = array(
       'title' => 'Fees Summary',
       'page callback' => '_get_fees',
@@ -827,16 +828,19 @@ function _print_table ($signups) {
 function _print_one_family ($family, $signups) {
   // calculate points and for the family (they're already done per person)
   $result = "<h1>". $family ."</h1>\n";
+/* POINTS
   $result .= "points: ". $signups['points'];
   if ($signups['points'] < 12) {
     $result .= " (not eligible for discount next session)<br/>\n";
   } else {
     $result .= " (eligible for discount next session)<br/>\n";
   }
-  $fees = $signups['fees'];
+*/  $fees = $signups['fees'];
   if ($fees != 0) {
     $result .= " fees: ". _money($fees) ." paypal: ".
         _money(_paypal($fees)) ."\n";
+  } else {
+    $result .= " no fees due\n";
   }
   $result .= "<table>";
   $result .= "<thead><tr><th></th><th>Before</th><th>Period 1</th><th>Period 2</th><th>Lunch</th>".
