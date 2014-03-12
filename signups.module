@@ -72,7 +72,6 @@ function signups_menu () {
      'type' => MENU_CALLBACK,
    );
    // a page for getting all point information for a session
-/* POINTS
    $items['admin/points/%'] = array(
    	 'title' => 'Points Summary',
      'page callback' => '_get_points',
@@ -80,7 +79,7 @@ function signups_menu () {
      'access arguments' => array('view all signup info'),
      'type' => MENU_CALLBACK,
    );
- */  // a page for all fees to be paid
+   // a page for all fees to be paid
    $items['admin/fees_summary/%'] = array(
       'title' => 'Fees Summary',
       'page callback' => '_get_fees',
