@@ -837,7 +837,7 @@ function _print_one_family ($family, $signups) {
 */  $fees = $signups['fees'];
   if ($fees != 0) {
     $result .= " fees: ". _money($fees) ." paypal: ".
-        _money(_paypal($fees)) ."\n";
+        _money(_paypal($fees)) . " to fees@columbusunschoolers.com\n";
   } else {
     $result .= " no fees due\n";
   }
